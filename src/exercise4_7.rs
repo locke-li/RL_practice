@@ -5,27 +5,27 @@ use std::collections::BTreeMap;
 
 struct Graph<'a> {
     pub state: Vec<State<'a>>,
-    pub action: Vec<Action<'a>>,
+    pub action: Vec<Action>,
     pub state_lookup: BTreeMap<&'a str, *mut State<'a>>,
-    pub action_lookup: BTreeMap<&'a str, *const Action<'a>>,
+    pub action_lookup: BTreeMap<&'a str, *const Action>,
     pub theta: f32,
     pub policy_v: f32,
 }
 
 struct State<'a> {
-    pub name: &'a str,
+    pub name: String,
     pub reward: i32,
     pub action: Vec<Transition<'a>>,
     pub state_v: f32,
 }
 
-struct Action<'a> {
-    pub name: &'a str,
+struct Action {
+    pub name: String,
     pub reward: i32,
 }
 
 struct Transition<'a> {
-    pub action: &'a Action<'a>,
+    pub action: &'a Action,
     pub from: &'a State<'a>,
     pub to: &'a State<'a>,
     pub prob: f32,
@@ -40,16 +40,24 @@ impl<'a> Graph<'a> {
         }
     }
 
-    fn add_state(&mut self, name:&'a str, reward:i32) {
-        let state = State { name, reward, action: Vec::new() };
+    fn add_state(&mut self, name:String, reward:i32) -> &State {
+        let state = State { name, reward, action: Vec::new(), state_v: 0.0 };
         self.state.push(state);
-        self.state_lookup.insert(name, self.state.last_mut().unwrap());
+        let state:*mut State = self.state.last_mut().unwrap();
+        unsafe {
+            self.state_lookup.insert(&(*state).name, state);
+            &(*state)
+        }
     }
 
-    fn add_action(&mut self, name:&'a str, reward:i32) {
+    fn add_action(&mut self, name:String, reward:i32) -> &Action {
         let action = Action { name, reward };
         self.action.push(action);
-        self.action_lookup.insert(name, self.action.last().unwrap());
+        let action:*const Action = self.action.last().unwrap();
+        unsafe {
+            self.action_lookup.insert(&(*action).name, action);
+            &(*action)
+        }
     }
 
     fn add_transition(&self, action:&str, from:&'a str, to:&str, prob:f32) {
@@ -68,6 +76,13 @@ impl<'a> Graph<'a> {
     }
 
     fn print(&self) {
+        // println!("lookup");
+        // for (n, a) in self.action_lookup.iter() {
+        //     unsafe { println!("{} {}", n, (**a).name); }
+        // }
+        // for (n, s) in self.state_lookup.iter() {
+        //     unsafe { println!("{} {}", n, (**s).name); }
+        // }
         println!("action:");
         for a in self.action.iter() {
             println!("\t{:?}:{:?}", a.name, a.reward);
@@ -94,16 +109,26 @@ fn parse_graph<'a>() -> Graph<'a> {
     //     >stay,s1,0.5,0
     //     >move,s0,0.5,0
     // ";
-    let mut g = Graph::new();
     //TODO parse from text
-    g.add_state("s0", 0);
-    g.add_state("s1", 0);
-    g.add_action("stay", 0);
-    g.add_action("move", -4);
-    g.add_transition("stay", "s0", "s0", 0.5);
-    g.add_transition("move", "s0", "s1", 0.5);
-    g.add_transition("stay", "s1", "s1", 0.5);
-    g.add_transition("move", "s1", "s0", 0.5);
+    let mut g = Graph::new();
+    g.add_state(String::from("s0"), 0);
+    g.add_state(String::from("s1"), 0);
+    let state_name:Vec<&String> = g.state.iter().map(|s| unsafe { &(*(&s.name as *const String)) }).collect();
+    let prob = 1.0 / 6.0;
+    for k in 0..=5 {
+        let action = g.add_action(format!("move{}", k), k * -2) as *const Action;
+        for s_from in state_name.iter() {
+            for s_to in state_name.iter() {
+                if s_from != s_to {
+                    unsafe { g.add_transition(&(*action).name, &s_from, &s_to, prob); }
+                }
+            }
+        }
+    }
+    // g.add_transition("stay", "s0", "s0", 0.5);
+    // g.add_transition("move", "s0", "s1", 0.5);
+    // g.add_transition("stay", "s1", "s1", 0.5);
+    // g.add_transition("move", "s1", "s0", 0.5);
     g
 }
 
