@@ -8,14 +8,15 @@ struct Graph<'a> {
     pub action: Vec<Action<'a>>,
     pub state_lookup: BTreeMap<&'a str, *mut State<'a>>,
     pub action_lookup: BTreeMap<&'a str, *const Action<'a>>,
+    pub theta: f32,
     pub policy_v: f32,
-    pub state_v: Vec<f32>,
 }
 
 struct State<'a> {
     pub name: &'a str,
     pub reward: i32,
     pub action: Vec<Transition<'a>>,
+    pub state_v: f32,
 }
 
 struct Action<'a> {
@@ -35,7 +36,7 @@ impl<'a> Graph<'a> {
         Self {
             state: Vec::new(), state_lookup: BTreeMap::new(),
             action: Vec::new(), action_lookup: BTreeMap::new(),
-            policy_v: 0.0, state_v: Vec::new(),
+            theta: 0.0, policy_v: 0.0,
         }
     }
 
@@ -83,6 +84,7 @@ impl<'a> Graph<'a> {
 
 fn parse_graph<'a>() -> Graph<'a> {
     // let s = "
+    //     theta:1
     //     stay:0
     //     move:-4
     //     s0,0
@@ -105,7 +107,7 @@ fn parse_graph<'a>() -> Graph<'a> {
     g
 }
 
-fn phase_improve() {
+fn policy_improvement() {
 
 }
 
@@ -113,16 +115,19 @@ fn phase_external() {
 
 }
 
-fn evaluate_policy() {
-
-}
-
-fn select_action() {
-
-}
-
-fn reward() {
-
+fn evaluate_policy(state:&mut Vec<State>, theta: f32) {
+    loop {
+        let mut delta:f32 = 0.0;
+        for s in state.iter_mut() {
+            let v_old = s.state_v;
+            let v_new = s.action.iter()
+                .map(|a| a.action.reward as f32 + a.to.state_v)
+                .sum();
+            s.state_v = v_new;
+            delta = delta.max((v_new - v_old).abs());
+        }
+        if delta < theta { break }
+    }
 }
 
 pub fn run() {
