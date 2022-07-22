@@ -1,5 +1,5 @@
-mod exercise4_4;
+mod exercise4_7;
 
 fn main() {
-    exercise4_4::run();
+    exercise4_7::run();
 }
