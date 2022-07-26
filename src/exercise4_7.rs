@@ -60,7 +60,7 @@ impl<'a> Graph<'a> {
         }
     }
 
-    fn add_transition(&self, action:&str, from:&'a str, to:&str, prob:f32) {
+    fn add_transition(&self, action:&str, from:&str, to:&str, prob:f32) {
         if !self.action_lookup.contains_key(action)
             || !self.state_lookup.contains_key(from)
             || !self.state_lookup.contains_key(to) {
@@ -75,14 +75,58 @@ impl<'a> Graph<'a> {
         }
     }
 
+    fn refresh_lookup(&mut self) {
+        self.action_lookup = self.action.iter()
+            .map(|a| {
+                let p:*const Action = a;
+                unsafe { (&(*p).name as &str, p) }
+            }).collect();
+        self.state_lookup = self.state.iter_mut()
+            .map(|s| {
+                let p:*mut State = s;
+                unsafe { (&(*p).name as &str, p) }
+            }).collect();
+    }
+
+    fn parse_with(&mut self) {
+        // let s = "
+        //     theta:1
+        //     stay:0
+        //     move:-4
+        //     s0,0
+        //     >stay,s0,0.5,0
+        //     >move,s1,0.5,0
+        //     s1,0
+        //     >stay,s1,0.5,0
+        //     >move,s0,0.5,0
+        // ";
+        //TODO parse from text
+        let state_range = 2;
+        let action_range = 5;
+        for k in 0..state_range {
+            self.add_state(format!("s{}", k), 0);
+        }
+        for k in 0..=action_range {
+            self.add_action(format!("move{}", k), k * -2) as *const Action;
+        }
+        self.refresh_lookup();
+        let prob = 1.0 / (action_range + 1) as f32;
+        for a in self.action.iter() {
+            for s_from in self.state.iter() {
+                for s_to in self.state.iter() {
+                    if (s_from.name == s_to.name) == (a.name == "move0") {
+                        self.add_transition(&a.name, &s_from.name, &s_to.name, prob);
+                    }
+                }
+            }
+        }
+        // g.add_transition("stay", "s0", "s0", 0.5);
+        // g.add_transition("move", "s0", "s1", 0.5);
+        // g.add_transition("stay", "s1", "s1", 0.5);
+        // g.add_transition("move", "s1", "s0", 0.5);
+    }
+
     fn print(&self) {
-        // println!("lookup");
-        // for (n, a) in self.action_lookup.iter() {
-        //     unsafe { println!("{} {}", n, (**a).name); }
-        // }
-        // for (n, s) in self.state_lookup.iter() {
-        //     unsafe { println!("{} {}", n, (**s).name); }
-        // }
         println!("action:");
         for a in self.action.iter() {
             println!("\t{:?}:{:?}", a.name, a.reward);
@@ -95,41 +139,6 @@ impl<'a> Graph<'a> {
             }
         }
     }
-}
-
-fn parse_graph<'a>() -> Graph<'a> {
-    // let s = "
-    //     theta:1
-    //     stay:0
-    //     move:-4
-    //     s0,0
-    //     >stay,s0,0.5,0
-    //     >move,s1,0.5,0
-    //     s1,0
-    //     >stay,s1,0.5,0
-    //     >move,s0,0.5,0
-    // ";
-    //TODO parse from text
-    let mut g = Graph::new();
-    g.add_state(String::from("s0"), 0);
-    g.add_state(String::from("s1"), 0);
-    let state_name:Vec<&String> = g.state.iter().map(|s| unsafe { &(*(&s.name as *const String)) }).collect();
-    let prob = 1.0 / 6.0;
-    for k in 0..=5 {
-        let action = g.add_action(format!("move{}", k), k * -2) as *const Action;
-        for s_from in state_name.iter() {
-            for s_to in state_name.iter() {
-                if s_from != s_to {
-                    unsafe { g.add_transition(&(*action).name, &s_from, &s_to, prob); }
-                }
-            }
-        }
-    }
-    // g.add_transition("stay", "s0", "s0", 0.5);
-    // g.add_transition("move", "s0", "s1", 0.5);
-    // g.add_transition("stay", "s1", "s1", 0.5);
-    // g.add_transition("move", "s1", "s0", 0.5);
-    g
 }
 
 fn policy_improvement() {
@@ -156,6 +165,7 @@ fn evaluate_policy(state:&mut Vec<State>, theta: f32) {
 }
 
 pub fn run() {
-    let g = parse_graph();
+    let mut g = Graph::new();
+    g.parse_with();
     g.print();
 }
