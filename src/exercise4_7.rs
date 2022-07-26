@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::cmp::min;
 
 //for cyclic reference:
 //https://eli.thegreenplace.net/2021/rust-data-structures-with-circular-references/
@@ -8,7 +9,6 @@ struct Graph<'a> {
     pub action: Vec<Action>,
     pub state_lookup: BTreeMap<&'a str, *mut State<'a>>,
     pub action_lookup: BTreeMap<&'a str, *const Action>,
-    pub theta: f32,
     pub policy_v: f32,
 }
 
@@ -82,12 +82,19 @@ impl Action {
         self.desc.count
     }
 }
+
+impl<'a> Transition<'a> {
+    fn reward(&self, discount:f32) -> f32 {
+        self.action.reward as f32 + discount * self.to.state_v
+    }
+}
+
 impl<'a> Graph<'a> {
     fn new() -> Self {
         Self {
             state: Vec::new(), state_lookup: BTreeMap::new(),
             action: Vec::new(), action_lookup: BTreeMap::new(),
-            theta: 0.0, policy_v: 0.0,
+            policy_v: 0.0,
         }
     }
 
@@ -179,7 +186,7 @@ impl<'a> Graph<'a> {
                 let action = &Graph::action_name(k);
                 let to = &Graph::state_name(count[0] - k, count[1] + k);
                 self.add_transition(action, s.name(), to, prob)
-                }
+            }
             //move in
             for k in 1..=range1 {
                 let action = &Graph::action_name(k);
@@ -199,35 +206,44 @@ impl<'a> Graph<'a> {
             println!("\t{:?}:{:?}", s.name(), s.reward);
             for t in s.action.iter() {
                 println!("\t\t{:?}:{:?}->{:?}|{:?}", t.action.name(), t.from.name(), t.to.name(), t.prob);
+            }
         }
+    }
+
+    fn print_policy(&self) {
+        
     }
 }
 
-fn policy_improvement() {
-
+fn policy_improvement() -> bool {
+    false
 }
 
 fn phase_external() {
 
 }
 
-fn evaluate_policy(state:&mut Vec<State>, theta: f32) {
+fn evaluate_policy(state:&mut Vec<State>, discount:f32, theta: f32, max_iter:i32) {
+    let mut i = 0;
     loop {
         let mut delta:f32 = 0.0;
         for s in state.iter_mut() {
             let v_old = s.state_v;
             let v_new = s.action.iter()
-                .map(|a| a.action.reward as f32 + a.to.state_v)
+                .map(|t| t.prob * t.reward(discount))
                 .sum();
             s.state_v = v_new;
             delta = delta.max((v_new - v_old).abs());
         }
-        if delta < theta { break }
+        i += 1;
+        println!("{}:{}", i, delta);
+        if delta <= theta || i >= max_iter { break }
     }
 }
 
 pub fn run() {
     let mut g = Graph::new();
     g.setup();
-    g.print_info();
+    // g.print_info();
+    evaluate_policy(&mut g.state, 0.9, 0.02, 128);
 }
