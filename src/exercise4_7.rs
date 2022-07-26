@@ -9,7 +9,10 @@ struct Graph<'a> {
     pub action: Vec<Action>,
     pub state_lookup: BTreeMap<&'a str, *mut State<'a>>,
     pub action_lookup: BTreeMap<&'a str, *const Action>,
-    pub policy_v: f32,
+}
+
+struct Policy<'a> {
+    pub state_action: BTreeMap<&'a State<'a>, &'a Action>,
 }
 
 struct StateDesc {
@@ -94,7 +97,6 @@ impl<'a> Graph<'a> {
         Self {
             state: Vec::new(), state_lookup: BTreeMap::new(),
             action: Vec::new(), action_lookup: BTreeMap::new(),
-            policy_v: 0.0,
         }
     }
 
@@ -154,7 +156,21 @@ impl<'a> Graph<'a> {
         format!("a{}", v)
     }
 
+    fn state_reward(v:i32, l:i32) -> i32 {
+        //Poisson distribution with mean l
+        min(v, l) * 10
+    }
+
+    fn state_change(m:i32, v:i32, l:i32) -> i32 {
+        //Poisson distribution with mean l
+        min(m - v, l)
+    }
+
     fn setup(&mut self) {
+        let l_rent_0 = 3;
+        let l_rent_1 = 4;
+        let l_return_0 = 3;
+        let l_return_1 = 2;
         let move_limit = 5;
         let state_range = 20;
         let action_range = move_limit;
@@ -164,7 +180,7 @@ impl<'a> Graph<'a> {
                 count.push(m);
                 count.push(n);
                 let desc = StateDesc::new(Graph::state_name(m, n), count);
-                self.add_state(desc, 0);
+                self.add_state(desc, Graph::state_reward(m, l_rent_0) + Graph::state_reward(n, l_rent_1));
             }
         }
         for k in 0..=action_range {
@@ -175,10 +191,12 @@ impl<'a> Graph<'a> {
         let a0 = self.action.get(0).unwrap();
         for s in self.state.iter() {
             let count = &s.desc.count;
-            let range0 = min(min(count[0], state_range - count[1]), move_limit);
-            let range1 = min(min(count[1], state_range - count[0]), move_limit);
+            let c0 = count[0] + l_return_0;
+            let c1 = count[1] + l_return_1;
+            let range0 = min(min(c0, state_range - c1), move_limit);
+            let range1 = min(min(c1, state_range - c0), move_limit);
             let prob = 1.0 / (range0 + range1 + 1) as f32;
-            // println!("{} {} {} {}", count[0], count[1], range0, range1);
+            // println!("{} {} {} {}", c0, c1, range0, range1);
             //self transition
             self.add_transition(a0.name(), s.name(), s.name(), prob);
             //move out
@@ -215,12 +233,10 @@ impl<'a> Graph<'a> {
     }
 }
 
-fn policy_improvement() -> bool {
-    false
-}
-
-fn phase_external() {
-
+impl<'a> Policy<'a> {
+    fn new() -> Self {
+        Self { state_action: BTreeMap::new() }
+    }
 }
 
 fn evaluate_policy(state:&mut Vec<State>, discount:f32, theta: f32, max_iter:i32) {
@@ -231,7 +247,7 @@ fn evaluate_policy(state:&mut Vec<State>, discount:f32, theta: f32, max_iter:i32
             let v_old = s.state_v;
             let v_new = s.action.iter()
                 .map(|t| t.prob * t.reward(discount))
-                .sum();
+                .sum::<f32>() + s.reward as f32;
             s.state_v = v_new;
             delta = delta.max((v_new - v_old).abs());
         }
@@ -241,9 +257,17 @@ fn evaluate_policy(state:&mut Vec<State>, discount:f32, theta: f32, max_iter:i32
     }
 }
 
+fn policy_improvement(p:&mut Policy, g:&Graph) -> bool {
+    for s in g.state.iter() {
+        
+    }
+    true
+}
+
 pub fn run() {
     let mut g = Graph::new();
     g.setup();
     // g.print_info();
-    evaluate_policy(&mut g.state, 0.9, 0.02, 128);
+    let mut p = Policy::new();
+    evaluate_policy(&mut g.state, 0.9, 0.1, 128);
 }
