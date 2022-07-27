@@ -105,21 +105,13 @@ impl<'a> Graph<'a> {
     fn add_state(&mut self, desc:StateDesc, reward:f32) -> &State {
         let state = State::new(desc, reward);
         self.state.push(state);
-        let state:*mut State = self.state.last_mut().unwrap();
-        unsafe {
-            self.state_lookup.insert((*state).name(), state);
-            &(*state)
-        }
+        self.state.last().unwrap()
     }
 
     fn add_action(&mut self, desc:ActionDesc, reward:f32) -> &Action {
         let action = Action::new(desc, reward);
         self.action.push(action);
-        let action:*const Action = self.action.last().unwrap();
-        unsafe {
-            self.action_lookup.insert((*action).name(), action);
-            &(*action)
-        }
+        self.action.last().unwrap()
     }
 
     fn add_transition(&self, action:&str, from:&str, to:&str, prob:f32) -> Option<&Transition> {
