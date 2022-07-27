@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::cmp::min;
+use std::cmp::{ min, max };
 
 //for cyclic reference:
 //https://eli.thegreenplace.net/2021/rust-data-structures-with-circular-references/
@@ -191,8 +191,8 @@ impl<'a> Graph<'a> {
         let a0 = self.action.get(0).unwrap();
         for s in self.state.iter() {
             let count = &s.desc.count;
-            let c0 = count[0] + l_return_0;
-            let c1 = count[1] + l_return_1;
+            let c0 = max(count[0] + l_return_0 - l_rent_0, 0);
+            let c1 = max(count[1] + l_return_1 - l_rent_1, 0);
             let range0 = min(min(c0, state_range - c1), move_limit);
             let range1 = min(min(c1, state_range - c0), move_limit);
             let prob = 1.0 / (range0 + range1 + 1) as f32;
@@ -202,14 +202,14 @@ impl<'a> Graph<'a> {
             //move out
             for k in 1..=range0 {
                 let action = &Graph::action_name(k);
-                let to = &Graph::state_name(count[0] - k, count[1] + k);
-                self.add_transition(action, s.name(), to, prob)
+                let to = &Graph::state_name(c0 - k, c1 + k);
+                self.add_transition(action, s.name(), to, prob);
             }
             //move in
             for k in 1..=range1 {
                 let action = &Graph::action_name(k);
-                let to = &Graph::state_name(count[0] + k, count[1] - k);
-                self.add_transition(action, s.name(), to, prob)
+                let to = &Graph::state_name(c0 + k, c1 - k);
+                self.add_transition(action, s.name(), to, prob);
             }
         }
     }
