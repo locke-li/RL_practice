@@ -12,8 +12,8 @@ struct Graph<'a> {
     pub action_lookup: BTreeMap<&'a str, *const Action>,
 }
 
-struct Policy<'a> {
-    pub state_action: BTreeMap<&'a State<'a>, &'a Action>,
+struct Policy {
+    pub state_action: BTreeMap<String, String>,
 }
 
 struct StateDesc {
@@ -232,14 +232,32 @@ impl<'a> Graph<'a> {
         }
     }
 
-    fn print_policy(&self) {
-        
+    fn print_state(&self) {
+        //TODO
+        let mut s_last = &self.state[0];
+        for s in self.state.iter() {
+            print!("\t{:.1}", s.state_v);
+            if (s_last.desc.count[0] != s.desc.count[0] && s_last.desc.count[1] != s.desc.count[1]) {
+                println!();
+            }
+            s_last = s;
+        }
+        println!();
     }
 }
 
-impl<'a> Policy<'a> {
+impl Policy {
     fn new() -> Self {
         Self { state_action: BTreeMap::new() }
+    }
+
+    fn print(&self) {
+        for (s, a) in self.state_action.iter() {
+            print!("{} ", a);
+            if s.contains("20") {
+                println!();
+            }
+        }
     }
 }
 
@@ -256,22 +274,45 @@ fn evaluate_policy(state:&mut Vec<State>, discount:f32, theta: f32, max_iter:i32
             delta = delta.max((v_new - v_old).abs());
         }
         i += 1;
-        println!("{}:{}", i, delta);
+        // println!("{}:{}", i, delta);
         if delta <= theta || i >= max_iter { break }
     }
 }
 
-fn policy_improvement(p:&mut Policy, g:&Graph) -> bool {
+fn policy_improvement(p:&mut Policy, g:&Graph, discount:f32) -> bool {
+    println!("improvement:");
+    let mut policy_stable = true;
     for s in g.state.iter() {
-        
+        let sn = s.name();
+        let a_old = p.state_action.get(sn);
+        let (a_new, _) = s.action.iter()
+            .map(|(_, vec_t)| (vec_t[0].action, vec_t))
+            .map(|(a, vec_t)|
+                (a, a.reward + vec_t.iter().map(|t| t.prob * t.reward(discount)).sum::<f32>()))
+            .max_by(|(_, x), (_, y)| x.total_cmp(y)).unwrap();
+        let state_stable = match a_old {
+            Some(v) => v.eq(a_new.name()),
+            None => false,
+        };
+        println!("{} {}", sn, a_new.name());
+        p.state_action.insert(sn.to_owned(), a_new.name().to_owned());
+        policy_stable = policy_stable && state_stable;
     }
-    true
+    policy_stable
 }
 
 pub fn run() {
+    let discount = 0.9;
     let mut g = Graph::new();
     g.setup();
     // g.print_info();
     let mut p = Policy::new();
-    evaluate_policy(&mut g.state, 0.9, 0.1, 128);
+    loop {
+        evaluate_policy(&mut g.state, discount, 0.1, 128);
+        // g.print_state();
+        let stable = policy_improvement(&mut p, &g, discount);
+        if stable { break }
+    }
+    println!("finish");
+    p.print();
 }
