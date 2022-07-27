@@ -22,8 +22,8 @@ struct StateDesc {
 
 struct State<'a> {
     pub desc: StateDesc,
-    pub reward: i32,
     pub action: Vec<Transition<'a>>,
+    pub reward: f32,
     pub state_v: f32,
 }
 
@@ -34,7 +34,7 @@ struct ActionDesc {
 
 struct Action {
     pub desc: ActionDesc,
-    pub reward: i32,
+    pub reward: f32,
 }
 
 struct Transition<'a> {
@@ -51,8 +51,8 @@ impl StateDesc {
 }
 
 impl<'a> State<'a> {
-    fn new(desc:StateDesc, reward:i32) -> Self {
         Self { desc, reward, action: Vec::new(), state_v: 0.0}
+    fn new(desc:StateDesc, reward:f32) -> Self {
     }
 
     fn name(&self) -> &str {
@@ -73,7 +73,7 @@ impl ActionDesc {
 }
 
 impl Action {
-    fn new(desc:ActionDesc, reward:i32) -> Self {
+    fn new(desc:ActionDesc, reward:f32) -> Self {
         Self { desc, reward }
     }
 
@@ -100,7 +100,7 @@ impl<'a> Graph<'a> {
         }
     }
 
-    fn add_state(&mut self, desc:StateDesc, reward:i32) -> &State {
+    fn add_state(&mut self, desc:StateDesc, reward:f32) -> &State {
         let state = State::new(desc, reward);
         self.state.push(state);
         let state:*mut State = self.state.last_mut().unwrap();
@@ -110,7 +110,7 @@ impl<'a> Graph<'a> {
         }
     }
 
-    fn add_action(&mut self, desc:ActionDesc, reward:i32) -> &Action {
+    fn add_action(&mut self, desc:ActionDesc, reward:f32) -> &Action {
         let action = Action::new(desc, reward);
         self.action.push(action);
         let action:*const Action = self.action.last().unwrap();
@@ -120,7 +120,7 @@ impl<'a> Graph<'a> {
         }
     }
 
-    fn add_transition(&self, action:&str, from:&str, to:&str, prob:f32) {
+    fn add_transition(&self, action:&str, from:&str, to:&str, prob:f32) -> Option<&Transition> {
         if !self.action_lookup.contains_key(action)
             || !self.state_lookup.contains_key(from)
             || !self.state_lookup.contains_key(to) {
@@ -156,14 +156,14 @@ impl<'a> Graph<'a> {
         format!("a{}", v)
     }
 
-    fn state_reward(v:i32, l:i32) -> i32 {
+    fn state_reward(v:i32, l:i32) -> f32 {
         //Poisson distribution with mean l
-        min(v, l) * 10
+        min(v, l) as f32 * 10.0
     }
 
-    fn state_change(m:i32, v:i32, l:i32) -> i32 {
+    fn state_change(m:i32, v:i32, l:i32) -> f32 {
         //Poisson distribution with mean l
-        min(m - v, l)
+        min(m - v, l) as f32
     }
 
     fn setup(&mut self) {
@@ -185,7 +185,7 @@ impl<'a> Graph<'a> {
         }
         for k in 0..=action_range {
             let desc = ActionDesc::new(Graph::action_name(k), k);
-            self.add_action(desc, k * -2);
+            self.add_action(desc, k as f32 * -2.0);
         }
         self.refresh_lookup();
         let a0 = self.action.get(0).unwrap();
@@ -247,7 +247,7 @@ fn evaluate_policy(state:&mut Vec<State>, discount:f32, theta: f32, max_iter:i32
             let v_old = s.state_v;
             let v_new = s.action.iter()
                 .map(|t| t.prob * t.reward(discount))
-                .sum::<f32>() + s.reward as f32;
+                .sum::<f32>() + s.reward;
             s.state_v = v_new;
             delta = delta.max((v_new - v_old).abs());
         }
