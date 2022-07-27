@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::collections::btree_map::Entry::{ Vacant, Occupied };
 use std::cmp::{ min, max };
 
 //for cyclic reference:
@@ -22,8 +23,9 @@ struct StateDesc {
 
 struct State<'a> {
     pub desc: StateDesc,
-    pub action: Vec<Transition<'a>>,
     pub reward: f32,
+    pub action: BTreeMap<&'a str, Vec<&'a Transition<'a>>>,
+    pub transition: Vec<Transition<'a>>,
     pub state_v: f32,
 }
 
@@ -51,8 +53,8 @@ impl StateDesc {
 }
 
 impl<'a> State<'a> {
-        Self { desc, reward, action: Vec::new(), state_v: 0.0}
     fn new(desc:StateDesc, reward:f32) -> Self {
+        Self { desc, reward, action: BTreeMap::new(), transition: Vec::new(), state_v: 0.0}
     }
 
     fn name(&self) -> &str {
@@ -125,13 +127,23 @@ impl<'a> Graph<'a> {
             || !self.state_lookup.contains_key(from)
             || !self.state_lookup.contains_key(to) {
             println!("invalid transition {:?}:{:?}->{:?}", action, from, to);
-            return
+            return None;
         }
         unsafe {
             let action = &(*self.action_lookup[action]);
-            let from = self.state_lookup[from];
+            let p_from = self.state_lookup[from];
+            let from = &(*p_from);
+            let from_mut = &mut(*p_from);
             let to = &(*self.state_lookup[to]);
-            (*from).action.push(Transition::<'a> { action, from: &(*from), to, prob });
+            from_mut.transition.push(Transition::<'a> { action, from, to, prob });
+            let p:*const Transition = from.transition.last().unwrap();
+            let list = match from_mut.action.entry(action.name()) {
+                Vacant(v) => v.insert(Vec::new()),
+                Occupied(v) => v.into_mut(),
+            };
+            let t = &(*p);
+            list.push(t);
+            Some(t)
         }
     }
 
@@ -222,7 +234,7 @@ impl<'a> Graph<'a> {
         println!("state:");
         for s in self.state.iter() {
             println!("\t{:?}:{:?}", s.name(), s.reward);
-            for t in s.action.iter() {
+            for t in s.transition.iter() {
                 println!("\t\t{:?}:{:?}->{:?}|{:?}", t.action.name(), t.from.name(), t.to.name(), t.prob);
             }
         }
@@ -245,7 +257,7 @@ fn evaluate_policy(state:&mut Vec<State>, discount:f32, theta: f32, max_iter:i32
         let mut delta:f32 = 0.0;
         for s in state.iter_mut() {
             let v_old = s.state_v;
-            let v_new = s.action.iter()
+            let v_new = s.transition.iter()
                 .map(|t| t.prob * t.reward(discount))
                 .sum::<f32>() + s.reward;
             s.state_v = v_new;
