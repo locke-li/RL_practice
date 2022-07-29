@@ -225,8 +225,8 @@ impl<'a> Graph<'a> {
                 let to = &Graph::state_name(c0 + k, c1 - k);
                 self.add_transition(action, s.name(), to, prob);
             }
-            self.refresh_state_action();
         }
+        self.refresh_state_action();
     }
 
     fn print_info(&self) {
