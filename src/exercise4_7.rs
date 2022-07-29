@@ -12,6 +12,22 @@ struct Graph<'a> {
     pub action_lookup: BTreeMap<&'a str, *const Action>,
 }
 
+struct GraphInfo {
+    pub l_rent_0:i32,
+    pub l_rent_1:i32,
+    pub l_return_0:i32,
+    pub l_return_1:i32,
+    pub move_limit:i32,
+    pub state_range:i32,
+    pub nf:Vec<i32>,
+}
+
+struct AgentInfo {
+    pub discount:f32,
+    pub theta:f32,
+    pub max_iter:i32,
+}
+
 struct Policy {
     pub state_action: BTreeMap<String, String>,
 }
@@ -91,6 +107,16 @@ impl Action {
 impl<'a> Transition<'a> {
     fn reward(&self, discount:f32) -> f32 {
         self.from.reward + self.action.reward + discount * self.to.state_v
+    }
+}
+
+impl GraphInfo {
+    fn setup(&mut self) {
+        let nf = &mut self.nf;
+        nf.push(1);
+        for k in 1..10 {
+            nf.push(nf.last().unwrap() * k);
+        }
     }
 }
 
@@ -178,24 +204,34 @@ impl<'a> Graph<'a> {
         min(m - v, l) as f32
     }
 
-    fn setup(&mut self) {
-        let l_rent_0 = 3;
-        let l_rent_1 = 4;
-        let l_return_0 = 3;
-        let l_return_1 = 2;
-        let move_limit = 5;
-        let state_range = 20;
-        let action_range = move_limit;
-        for m in 0..=state_range {
-            for n in 0..=state_range {
+    fn add_transition_for_move(&self, s:&str, c0:i32, c1:i32, k:i32, gi:&GraphInfo, prob:f32) {
+        let action = &Graph::action_name(k);
+        let e:f32 = 2.7182818284;
+        let r0 = min(gi.move_limit - c0, gi.l_return_0 * 2);
+        let r1 = min(gi.move_limit - c1, gi.l_return_1 * 2);
+        let l0 = gi.l_return_0 as f32;
+        let l1 = gi.l_return_1 as f32;
+        for n0 in 0..=r0 {
+            for n1 in  0..=r1 {
+                let to = &Graph::state_name(c0 - k + n0, c1 + k + n1);
+                let prob0 = e.powf(-l0) * l0.powf(n0 as f32) / gi.nf[n0 as usize] as f32;
+                let prob1 = e.powf(-l1) * l1.powf(n1 as f32) / gi.nf[n1 as usize] as f32;
+                self.add_transition(action, s, to, prob0 * prob1 * prob);
+            }
+        }
+    }
+
+    fn setup(&mut self, gi:&GraphInfo) {
+        for m in 0..=gi.state_range {
+            for n in 0..=gi.state_range {
                 let mut count:Vec<i32> = Vec::new();
                 count.push(m);
                 count.push(n);
                 let desc = StateDesc::new(Graph::state_name(m, n), count);
-                self.add_state(desc, Graph::state_reward(m, l_rent_0) + Graph::state_reward(n, l_rent_1));
+                self.add_state(desc, Graph::state_reward(m, gi.l_rent_0) + Graph::state_reward(n, gi.l_rent_1));
             }
         }
-        for k in 0..=action_range {
+        for k in 0..=gi.move_limit {
             let desc = ActionDesc::new(Graph::action_name(k), k);
             self.add_action(desc, k as f32 * -2.0);
             let desc = ActionDesc::new(Graph::action_name(-k), -k);
@@ -205,25 +241,21 @@ impl<'a> Graph<'a> {
         let a0 = self.action.get(0).unwrap();
         for s in self.state.iter() {
             let count = &s.desc.count;
-            let c0 = max(count[0] + l_return_0 - l_rent_0, 0);
-            let c1 = max(count[1] + l_return_1 - l_rent_1, 0);
-            let range0 = min(min(c0, state_range - c1), move_limit);
-            let range1 = min(min(c1, state_range - c0), move_limit);
+            let c0 = count[0];
+            let c1 = count[1];
+            let range0 = min(c0, gi.move_limit);
+            let range1 = min(c1, gi.move_limit);
             let prob = 1.0 / (range0 + range1 + 1) as f32;
             // println!("{} {} {} {}", c0, c1, range0, range1);
             //self transition
             self.add_transition(a0.name(), s.name(), s.name(), prob);
             //move out
             for k in 1..=range0 {
-                let action = &Graph::action_name(k);
-                let to = &Graph::state_name(c0 - k, c1 + k);
-                self.add_transition(action, s.name(), to, prob);
+                self.add_transition_for_move(s.name(), c0, c1, k, gi, prob);
             }
             //move in
             for k in 1..=range1 {
-                let action = &Graph::action_name(-k);
-                let to = &Graph::state_name(c0 + k, c1 - k);
-                self.add_transition(action, s.name(), to, prob);
+                self.add_transition_for_move(s.name(), c0, c1, -k, gi, prob);
             }
         }
         self.refresh_state_action();
@@ -298,26 +330,26 @@ impl Policy {
     }
 }
 
-fn evaluate_policy(state:&mut Vec<State>, discount:f32, theta: f32, max_iter:i32) {
+fn evaluate_policy(state:&mut Vec<State>, info:&AgentInfo) {
     let mut i = 0;
     loop {
         let mut delta:f32 = 0.0;
         for s in state.iter_mut() {
             let v_old = s.state_v;
             let v_new = s.transition.iter()
-                .map(|t| t.prob * t.reward(discount))
+                .map(|t| t.prob * t.reward(info.discount))
                 .sum::<f32>();
             s.state_v = v_new;
-            println!("{} {} {}", s.name(), v_old, v_new);
+            // println!("{} {} {}", s.name(), v_old, v_new);
             delta = delta.max((v_new - v_old).abs());
         }
         i += 1;
         // println!("{}:{}", i, delta);
-        if delta <= theta || i >= max_iter { break }
+        if delta <= info.theta || i >= info.max_iter { break }
     }
 }
 
-fn policy_improvement(p:&mut Policy, g:&Graph, discount:f32) -> bool {
+fn policy_improvement(p:&mut Policy, g:&Graph, info:&AgentInfo) -> bool {
     println!("improvement:");
     let mut policy_stable = true;
     for s in g.state.iter() {
@@ -326,7 +358,7 @@ fn policy_improvement(p:&mut Policy, g:&Graph, discount:f32) -> bool {
         let (a_new, _) = s.action.iter()
             .map(|(_, vec_t)| (vec_t[0].action, vec_t))
             .map(|(a, vec_t)|
-                (a, vec_t.iter().map(|t| t.prob * t.reward(discount)).sum::<f32>()))
+                (a, vec_t.iter().map(|t| t.prob * t.reward(info.discount)).sum::<f32>()))
             .max_by(|(_, x), (_, y)| x.total_cmp(y)).unwrap();
         // s.action.iter()
         //     .map(|(_, vec_t)| (vec_t[0].action, vec_t))
@@ -345,16 +377,18 @@ fn policy_improvement(p:&mut Policy, g:&Graph, discount:f32) -> bool {
 }
 
 pub fn run() {
-    let discount = 0.9;
+    let agent_info = AgentInfo { discount:0.9, theta:0.1, max_iter:128 };
+    let mut graph_info = GraphInfo { move_limit:5, l_rent_0:3, l_rent_1:4, l_return_0:3, l_return_1:2, state_range:20, nf:Vec::new() };
+    graph_info.setup();
     let mut g = Graph::new();
-    g.setup();
+    g.setup(&graph_info);
     // g.print_reward();
-    // g.print_info();
+    g.print_info();
     let mut p = Policy::new();
     loop {
-        evaluate_policy(&mut g.state, discount, 0.1, 128);
+        evaluate_policy(&mut g.state, &agent_info);
         // g.print_state();
-        let stable = policy_improvement(&mut p, &g, discount);
+        let stable = policy_improvement(&mut p, &g, &agent_info);
         g.print_state();
         g.print_policy(&p);
         if stable { break }
