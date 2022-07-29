@@ -90,7 +90,7 @@ impl Action {
 
 impl<'a> Transition<'a> {
     fn reward(&self, discount:f32) -> f32 {
-        self.action.reward as f32 + discount * self.to.state_v
+        self.from.reward + self.action.reward + discount * self.to.state_v
     }
 }
 
@@ -161,11 +161,11 @@ impl<'a> Graph<'a> {
     }
 
     fn state_name(m:i32, n:i32) -> String {
-        format!("s{}_{}", m, n)
+        format!("{}_{}", m, n)
     }
 
     fn action_name(v:i32) -> String {
-        format!("a{}", v)
+        format!("{:+}", v)
     }
 
     fn state_reward(v:i32, l:i32) -> f32 {
@@ -198,6 +198,8 @@ impl<'a> Graph<'a> {
         for k in 0..=action_range {
             let desc = ActionDesc::new(Graph::action_name(k), k);
             self.add_action(desc, k as f32 * -2.0);
+            let desc = ActionDesc::new(Graph::action_name(-k), -k);
+            self.add_action(desc, k as f32 * -2.0);
         }
         self.refresh_lookup();
         let a0 = self.action.get(0).unwrap();
@@ -219,7 +221,7 @@ impl<'a> Graph<'a> {
             }
             //move in
             for k in 1..=range1 {
-                let action = &Graph::action_name(k);
+                let action = &Graph::action_name(-k);
                 let to = &Graph::state_name(c0 + k, c1 - k);
                 self.add_transition(action, s.name(), to, prob);
             }
@@ -255,18 +257,30 @@ impl<'a> Graph<'a> {
         }
         println!();
     }
-}
 
-impl Policy {
-    fn new() -> Self {
-        Self { state_action: BTreeMap::new() }
-    }
-
-    fn print(&self) {
+    fn print_reward(&self) {
         //TODO
         let limit = 20;
         let mut count = 0;
-        for (s, a) in self.state_action.iter() {
+        for s in self.state.iter() {
+            print!("\t{}", s.reward);
+            count += 1;
+            if count > limit {
+                count = 0;
+                println!();
+            }
+        }
+        println!();
+    }
+
+    fn print_policy(&self, p:&Policy) {
+        //TODO
+        let limit = 20;
+        let mut count = 0;
+        for s in self.state.iter() {
+            let sn = s.name();
+            let a = &p.state_action[sn];
+            // print!("{}|{} ", sn, a);
             print!("{} ", a);
             count += 1;
             if count > limit {
@@ -274,6 +288,13 @@ impl Policy {
                 println!();
             }
         }
+        println!();
+    }
+}
+
+impl Policy {
+    fn new() -> Self {
+        Self { state_action: BTreeMap::new() }
     }
 }
 
@@ -285,8 +306,9 @@ fn evaluate_policy(state:&mut Vec<State>, discount:f32, theta: f32, max_iter:i32
             let v_old = s.state_v;
             let v_new = s.transition.iter()
                 .map(|t| t.prob * t.reward(discount))
-                .sum::<f32>() + s.reward;
+                .sum::<f32>();
             s.state_v = v_new;
+            println!("{} {} {}", s.name(), v_old, v_new);
             delta = delta.max((v_new - v_old).abs());
         }
         i += 1;
@@ -304,8 +326,13 @@ fn policy_improvement(p:&mut Policy, g:&Graph, discount:f32) -> bool {
         let (a_new, _) = s.action.iter()
             .map(|(_, vec_t)| (vec_t[0].action, vec_t))
             .map(|(a, vec_t)|
-                (a, a.reward + vec_t.iter().map(|t| t.prob * t.reward(discount)).sum::<f32>()))
+                (a, vec_t.iter().map(|t| t.prob * t.reward(discount)).sum::<f32>()))
             .max_by(|(_, x), (_, y)| x.total_cmp(y)).unwrap();
+        // s.action.iter()
+        //     .map(|(_, vec_t)| (vec_t[0].action, vec_t))
+        //     .map(|(a, vec_t)|
+        //         (a, vec_t.iter().map(|t| t.prob * t.reward(discount)).sum::<f32>() / vec_t.len() as f32))
+        //     .for_each(|(a, v)| println!("{} {}", a.name(), v));
         let state_stable = match a_old {
             Some(v) => v.eq(a_new.name()),
             None => false,
@@ -321,13 +348,15 @@ pub fn run() {
     let discount = 0.9;
     let mut g = Graph::new();
     g.setup();
+    // g.print_reward();
     // g.print_info();
     let mut p = Policy::new();
     loop {
         evaluate_policy(&mut g.state, discount, 0.1, 128);
         // g.print_state();
         let stable = policy_improvement(&mut p, &g, discount);
-        p.print();
+        g.print_state();
+        g.print_policy(&p);
         if stable { break }
     }
     println!("finish");
