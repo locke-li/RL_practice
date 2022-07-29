@@ -24,7 +24,7 @@ struct StateDesc {
 struct State<'a> {
     pub desc: StateDesc,
     pub reward: f32,
-    pub action: BTreeMap<&'a str, Vec<&'a Transition<'a>>>,
+    pub action: Vec<(&'a str, Vec<&'a Transition<'a>>)>,
     pub transition: Vec<Transition<'a>>,
     pub state_v: f32,
 }
@@ -54,7 +54,7 @@ impl StateDesc {
 
 impl<'a> State<'a> {
     fn new(desc:StateDesc, reward:f32) -> Self {
-        Self { desc, reward, action: BTreeMap::new(), transition: Vec::new(), state_v: 0.0}
+        Self { desc, reward, action: Vec::new(), transition: Vec::new(), state_v: 0.0}
     }
 
     fn name(&self) -> &str {
@@ -102,24 +102,22 @@ impl<'a> Graph<'a> {
         }
     }
 
-    fn add_state(&mut self, desc:StateDesc, reward:f32) -> &State {
+    fn add_state(&mut self, desc:StateDesc, reward:f32) {
         let state = State::new(desc, reward);
         self.state.push(state);
-        self.state.last().unwrap()
     }
 
-    fn add_action(&mut self, desc:ActionDesc, reward:f32) -> &Action {
+    fn add_action(&mut self, desc:ActionDesc, reward:f32) {
         let action = Action::new(desc, reward);
         self.action.push(action);
-        self.action.last().unwrap()
     }
 
-    fn add_transition(&self, action:&str, from:&str, to:&str, prob:f32) -> Option<&Transition> {
+    fn add_transition(&self, action:&str, from:&str, to:&str, prob:f32){
         if !self.action_lookup.contains_key(action)
             || !self.state_lookup.contains_key(from)
             || !self.state_lookup.contains_key(to) {
             println!("invalid transition {:?}:{:?}->{:?}", action, from, to);
-            return None;
+            return;
         }
         unsafe {
             let action = &(*self.action_lookup[action]);
@@ -128,14 +126,6 @@ impl<'a> Graph<'a> {
             let from_mut = &mut(*p_from);
             let to = &(*self.state_lookup[to]);
             from_mut.transition.push(Transition::<'a> { action, from, to, prob });
-            let p:*const Transition = from.transition.last().unwrap();
-            let list = match from_mut.action.entry(action.name()) {
-                Vacant(v) => v.insert(Vec::new()),
-                Occupied(v) => v.into_mut(),
-            };
-            let t = &(*p);
-            list.push(t);
-            Some(t)
         }
     }
 
@@ -150,6 +140,24 @@ impl<'a> Graph<'a> {
                 let p:*mut State = s;
                 unsafe { ((*p).name(), p) }
             }).collect();
+    }
+
+    fn refresh_state_action(&self) {
+        for s in self.state.iter() {
+            let mut map:BTreeMap<&str, Vec<&Transition>> = BTreeMap::new();
+            for t in s.transition.iter() {
+                let pt:*const Transition = t;
+                let t_ref = unsafe { &(*pt) };
+                let list = match map.entry(t_ref.action.name()) {
+                    Vacant(v) => v.insert(Vec::new()),
+                    Occupied(v) => v.into_mut(),
+                };
+                list.push(t_ref);
+            }
+            let ps = self.state_lookup[s.name()];
+            let s_ref = unsafe { &mut(*ps) };
+            s_ref.action = map.into_iter().collect();
+        }
     }
 
     fn state_name(m:i32, n:i32) -> String {
@@ -215,6 +223,7 @@ impl<'a> Graph<'a> {
                 let to = &Graph::state_name(c0 + k, c1 - k);
                 self.add_transition(action, s.name(), to, prob);
             }
+            self.refresh_state_action();
         }
     }
 
@@ -234,13 +243,15 @@ impl<'a> Graph<'a> {
 
     fn print_state(&self) {
         //TODO
-        let mut s_last = &self.state[0];
+        let limit = 20;
+        let mut count = 0;
         for s in self.state.iter() {
             print!("\t{:.1}", s.state_v);
-            if (s_last.desc.count[0] != s.desc.count[0] && s_last.desc.count[1] != s.desc.count[1]) {
+            count += 1;
+            if count > limit {
+                count = 0;
                 println!();
             }
-            s_last = s;
         }
         println!();
     }
@@ -252,9 +263,14 @@ impl Policy {
     }
 
     fn print(&self) {
+        //TODO
+        let limit = 20;
+        let mut count = 0;
         for (s, a) in self.state_action.iter() {
             print!("{} ", a);
-            if s.contains("20") {
+            count += 1;
+            if count > limit {
+                count = 0;
                 println!();
             }
         }
@@ -294,8 +310,8 @@ fn policy_improvement(p:&mut Policy, g:&Graph, discount:f32) -> bool {
             Some(v) => v.eq(a_new.name()),
             None => false,
         };
-        println!("{} {}", sn, a_new.name());
-        p.state_action.insert(sn.to_owned(), a_new.name().to_owned());
+        // println!("{} {}", sn, a_new.name());
+        p.state_action.insert(sn.to_owned().clone(), a_new.name().to_owned().clone());
         policy_stable = policy_stable && state_stable;
     }
     policy_stable
@@ -311,8 +327,8 @@ pub fn run() {
         evaluate_policy(&mut g.state, discount, 0.1, 128);
         // g.print_state();
         let stable = policy_improvement(&mut p, &g, discount);
+        p.print();
         if stable { break }
     }
     println!("finish");
-    p.print();
 }
