@@ -56,7 +56,7 @@ impl<T> NdVec2<T> {
     pub fn new(x: (i32, i32), y: (i32, i32)) -> Self {
         assert!(x.1 >= x.0 && y.1 >= y.0);
         let offset = (-x.0, -y.0);
-        let dimension = (x.1 - x.0, y.1 - y.0);
+        let dimension = (x.1 - x.0 + 1, y.1 - y.0 + 1);
         Self { offset, dimension, data: Vec::new() }
     }
 

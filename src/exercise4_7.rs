@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::collections::btree_map::Entry::{ Vacant, Occupied };
 use std::cmp::{ min, max };
 
-use crate::NdVec::{ NdVec1, NdVec2 };
+use crate::nd_vec::{ NdVec1, NdVec2 };
 
 //for cyclic reference:
 //https://eli.thegreenplace.net/2021/rust-data-structures-with-circular-references/
