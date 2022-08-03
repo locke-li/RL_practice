@@ -237,9 +237,9 @@ impl Graph {
         }
     }
 
-    fn print_state(&self) {
+    fn print_state(&self, gi:&GraphInfo) {
         //TODO
-        let limit = 20;
+        let limit = gi.state_range;
         let mut count = 0;
         for s in self.state.iter() {
             print!("\t{:.1}", s.state_v);
@@ -252,9 +252,9 @@ impl Graph {
         println!();
     }
 
-    fn print_reward(&self) {
+    fn print_reward(&self, gi:&GraphInfo) {
         //TODO
-        let limit = 20;
+        let limit = gi.state_range;
         let mut count = 0;
         for s in self.state.iter() {
             print!("\t{}", s.reward);
@@ -267,15 +267,15 @@ impl Graph {
         println!();
     }
 
-    fn print_policy(&self, p:&Policy) {
+    fn print_policy(&self, p:&Policy, gi:&GraphInfo) {
         //TODO
-        let limit = 20;
+        let limit = gi.state_range;
         let mut count = 0;
         for s in self.state.iter() {
             let sn = s.count();
             let a = p.state_action[sn];
-            // print!("{:?}|{} ", sn, a);
-            print!("{} ", a);
+            // print!("{:?} {}|{:+} ", sn, self.state.index(sn), a);
+            print!("{:+} ", a);
             count += 1;
             if count > limit {
                 count = 0;
@@ -318,7 +318,7 @@ fn evaluate_policy(g:&mut Graph, info:&AgentInfo) {
     }
 }
 
-fn policy_improvement(p:&mut Policy, g:&Graph, info:&AgentInfo) -> bool {
+fn policy_improvement(p:&mut Policy, g:&Graph, info:&AgentInfo, gi:&GraphInfo) -> bool {
     println!("improvement:");
     let mut policy_stable = true;
     for s in g.state.iter() {
@@ -338,9 +338,11 @@ fn policy_improvement(p:&mut Policy, g:&Graph, info:&AgentInfo) -> bool {
         //         (a, vec_t.iter().map(|t| t.prob * t.reward(discount)).sum::<f32>() / vec_t.len() as f32))
         //     .for_each(|(a, v)| println!("{} {}", a, v));
         let state_stable = a_old == a_new;
+        // if !state_stable { println!("{:?} {:+} {:+}", sn, a_old, a_new); }
         // println!("{} {}", sn, a_new);
         p.state_action[sn] = a_new;
         policy_stable = policy_stable && state_stable;
+        // g.print_policy(p, gi);
     }
     policy_stable
 }
@@ -357,9 +359,9 @@ pub fn run() {
     loop {
         evaluate_policy(&mut g, &agent_info);
         // g.print_state();
-        let stable = policy_improvement(&mut p, &g, &agent_info);
-        g.print_state();
-        g.print_policy(&p);
+        let stable = policy_improvement(&mut p, &g, &agent_info, &graph_info);
+        g.print_state(&graph_info);
+        g.print_policy(&p, &graph_info);
         if stable { break }
     }
     println!("finish");
