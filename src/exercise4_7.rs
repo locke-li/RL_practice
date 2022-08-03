@@ -1,8 +1,11 @@
+
+
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry::{ Vacant, Occupied };
 use std::cmp::{ min, max };
 
 use crate::nd_vec::{ NdVec1, NdVec2 };
+use crate::poisson::Poisson;
 
 //for cyclic reference:
 //https://eli.thegreenplace.net/2021/rust-data-structures-with-circular-references/
@@ -13,18 +16,17 @@ struct Graph {
 }
 
 struct GraphInfo {
-    pub l_rent_0:i32,
-    pub l_rent_1:i32,
-    pub l_return_0:i32,
-    pub l_return_1:i32,
+    pub dist_rent_0:Poisson,
+    pub dist_rent_1:Poisson,
+    pub dist_return_0:Poisson,
+    pub dist_return_1:Poisson,
     pub move_limit:i32,
     pub state_range:i32,
-    pub nf:Vec<i64>,
 }
 
 struct AgentInfo {
-    pub discount:f32,
-    pub theta:f32,
+    pub discount:f64,
+    pub theta:f64,
     pub max_iter:i32,
 }
 
@@ -39,10 +41,10 @@ struct StateDesc {
 
 struct State {
     pub desc: StateDesc,
-    pub reward: f32,
+    pub reward: f64,
     pub action: Vec<(i32, Vec<i32>)>,
     pub transition: Vec<Transition>,
-    pub state_v: f32,
+    pub state_v: f64,
 }
 
 struct ActionDesc {
@@ -52,14 +54,14 @@ struct ActionDesc {
 
 struct Action {
     pub desc: ActionDesc,
-    pub reward: f32,
+    pub reward: f64,
 }
 
 struct Transition {
     pub action: i32,
     pub from: (i32, i32),
     pub to: (i32, i32),
-    pub prob: f32,
+    pub prob: f64,
 }
 
 impl StateDesc {
@@ -69,7 +71,7 @@ impl StateDesc {
 }
 
 impl State {
-    fn new(desc:StateDesc, reward:f32) -> Self {
+    fn new(desc:StateDesc, reward:f64) -> Self {
         Self { desc, reward, action: Vec::new(), transition: Vec::new(), state_v: 0.0}
     }
 
@@ -95,7 +97,7 @@ impl ActionDesc {
 }
 
 impl Action {
-    fn new(desc:ActionDesc, reward:f32) -> Self {
+    fn new(desc:ActionDesc, reward:f64) -> Self {
         Self { desc, reward }
     }
 
@@ -109,18 +111,8 @@ impl Action {
 }
 
 impl Transition {
-    fn reward(&self, g:&Graph, discount:f32) -> f32 {
+    fn reward(&self, g:&Graph, discount:f64) -> f64 {
         g.state[self.from].reward + g.action[self.action].reward + discount * g.state[self.to].state_v
-    }
-}
-
-impl GraphInfo {
-    fn setup(&mut self) {
-        let nf = &mut self.nf;
-        nf.push(1);
-        for k in 1..=self.state_range as i64 {
-            nf.push(nf.last().unwrap() * k);
-        }
     }
 }
 
@@ -134,17 +126,17 @@ impl Graph {
         }
     }
 
-    fn add_state(&mut self, desc:StateDesc, reward:f32) {
+    fn add_state(&mut self, desc:StateDesc, reward:f64) {
         let state = State::new(desc, reward);
         self.state.push(state);
     }
 
-    fn add_action(&mut self, desc:ActionDesc, reward:f32) {
+    fn add_action(&mut self, desc:ActionDesc, reward:f64) {
         let action = Action::new(desc, reward);
         self.action.push(action);
     }
 
-    fn add_transition(&mut self, action:i32, from:(i32, i32), to:(i32, i32), prob:f32) {
+    fn add_transition(&mut self, action:i32, from:(i32, i32), to:(i32, i32), prob:f64) {
         let s_from = &mut self.state[from];
         s_from.transition.push(Transition { action, from, to, prob });
     }
@@ -157,24 +149,27 @@ impl Graph {
         format!("{:+}", v)
     }
 
-    fn state_reward(v:i32, l:i32) -> f32 {
-        //Poisson distribution with mean l
-        min(v, l) as f32 * 10.0
+    fn state_reward(v:i32, dist:&Poisson) -> f64 {
+        let v = v as usize;
+        let vf = v as f64;
+        let r:f64 = 0.0;
+        r += (0..=v).map(|v| dist.pmf(v) * vf).sum::<f64>();
+        r += (1.0 - dist.cdf(v)) * vf;
+        r
     }
 
-    fn add_transition_for_move(s:&mut State, k:i32, gi:&GraphInfo, prob:f32) {
+    fn add_transition_for_move(s:&mut State, k:i32, gi:&GraphInfo, prob:f64) {
         let (c0, c1) = s.count();
         let e:f32 = 2.7182818284;
-        let l0 = gi.l_return_0 as f32;
-        let l1 = gi.l_return_1 as f32;
+        let dist0 = &gi.dist_return_0;
+        let dist1 = &gi.dist_return_1;
         let sr = gi.state_range;
         for n0 in 0..=sr {
             for n1 in  0..=sr {
                 let to = (min(sr, c0 - k + n0), min(sr, c1 + k + n1));
                 if to.0 < 0 || to.1 < 0 { continue }
-                let prob0 = e.powf(-l0) * l0.powf(n0 as f32) / gi.nf[n0 as usize] as f32;
-                let prob1 = e.powf(-l1) * l1.powf(n1 as f32) / gi.nf[n1 as usize] as f32;
-                s.transition.push(Transition { action:k, from:s.count(), to, prob: prob * prob0 * prob1 });
+                prob *= dist0.pmf(n0 as usize) * dist1.pmf(n1 as usize);
+                s.transition.push(Transition { action:k, from:s.count(), to, prob: prob });
             }
         }
     }
@@ -197,17 +192,17 @@ impl Graph {
         for m in 0..=gi.state_range {
             for n in 0..=gi.state_range {
                 let desc = StateDesc::new(Graph::state_name(m, n), (m, n));
-                self.add_state(desc, Graph::state_reward(m, gi.l_rent_0) + Graph::state_reward(n, gi.l_rent_1));
+                self.add_state(desc, Graph::state_reward(m, &gi.dist_rent_0) + Graph::state_reward(n, &gi.dist_rent_1));
             }
         }
         let m = gi.move_limit;
         for k in -m..=m {
             let desc = ActionDesc::new(Graph::action_name(k), k);
-            self.add_action(desc, k.abs() as f32 * -2.0);
+            self.add_action(desc, k.abs() as f64 * -2.0);
         }
         let m = gi.move_limit;
         for s in self.state.iter_mut() {
-            let prob = 1.0 / (m * 2 + 1) as f32;
+            let prob = 1.0 / (m * 2 + 1) as f64;
             // println!("{} {} {} {}", c0, c1, range0, range1);
             //self transition
             Graph::add_transition_for_move(s, 0, gi, prob);
@@ -302,12 +297,12 @@ fn evaluate_policy(g:&mut Graph, info:&AgentInfo) {
     //hack to grant shared graph access
     let gs = unsafe { &(*pg) };
     loop {
-        let mut delta:f32 = 0.0;
+        let mut delta:f64 = 0.0;
         for s in g.state.iter_mut() {
             let v_old = s.state_v;
             let v_new = s.transition.iter()
                 .map(|t| t.prob * t.reward(gs, info.discount))
-                .sum::<f32>();
+                .sum::<f64>();
             s.state_v = v_new;
             // println!("{} {} {}", s.name(), v_old, v_new);
             delta = delta.max((v_new - v_old).abs());
@@ -330,7 +325,7 @@ fn policy_improvement(p:&mut Policy, g:&Graph, info:&AgentInfo, gi:&GraphInfo) -
                 (a, vec_t.iter()
                     .map(|t| &s.transition[*t as usize])
                     .map(|t| t.prob * t.reward(g, info.discount))
-                    .sum::<f32>()))
+                    .sum::<f64>()))
             .max_by(|(_, x), (_, y)| x.total_cmp(y)).unwrap();
         // s.action.iter()
         //     .map(|(_, vec_t)| (vec_t[0].action, vec_t))
@@ -349,8 +344,14 @@ fn policy_improvement(p:&mut Policy, g:&Graph, info:&AgentInfo, gi:&GraphInfo) -
 
 pub fn run() {
     let agent_info = AgentInfo { discount:0.9, theta:0.1, max_iter:128 };
-    let mut graph_info = GraphInfo { move_limit:5, l_rent_0:3, l_rent_1:4, l_return_0:3, l_return_1:2, state_range:20, nf:Vec::new() };
-    graph_info.setup();
+    let state_range:usize = 20;
+    let mut graph_info = GraphInfo { 
+        move_limit:5, state_range:state_range as i32,
+        dist_rent_0:Poisson::new(3, state_range),
+        dist_rent_1:Poisson::new(4, state_range),
+        dist_return_0:Poisson::new(3, state_range),
+        dist_return_1:Poisson::new(2, state_range),
+    };
     let mut g = Graph::new(&graph_info);
     g.setup(&graph_info);
     // g.print_reward();
