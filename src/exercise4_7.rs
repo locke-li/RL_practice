@@ -152,15 +152,14 @@ impl Graph {
     fn state_reward(v:i32, dist:&Poisson) -> f64 {
         let v = v as usize;
         let vf = v as f64;
-        let r:f64 = 0.0;
+        let mut r:f64 = 0.0;
         r += (0..=v).map(|v| dist.pmf(v) * vf).sum::<f64>();
         r += (1.0 - dist.cdf(v)) * vf;
         r
     }
 
-    fn add_transition_for_move(s:&mut State, k:i32, gi:&GraphInfo, prob:f64) {
+    fn add_transition_for_move(s:&mut State, k:i32, gi:&GraphInfo, prob_a:f64) {
         let (c0, c1) = s.count();
-        let e:f32 = 2.7182818284;
         let dist0 = &gi.dist_return_0;
         let dist1 = &gi.dist_return_1;
         let sr = gi.state_range;
@@ -168,8 +167,8 @@ impl Graph {
             for n1 in  0..=sr {
                 let to = (min(sr, c0 - k + n0), min(sr, c1 + k + n1));
                 if to.0 < 0 || to.1 < 0 { continue }
-                prob *= dist0.pmf(n0 as usize) * dist1.pmf(n1 as usize);
-                s.transition.push(Transition { action:k, from:s.count(), to, prob: prob });
+                let prob = prob_a * dist0.pmf(n0 as usize) * dist1.pmf(n1 as usize);
+                s.transition.push(Transition { action:k, from:s.count(), to, prob });
             }
         }
     }
@@ -294,7 +293,7 @@ impl Policy {
 fn evaluate_policy(g:&mut Graph, info:&AgentInfo) {
     let mut i = 0;
     let pg:*const Graph = g;
-    //hack to grant shared graph access
+    //hack to grant shared access to graph
     let gs = unsafe { &(*pg) };
     loop {
         let mut delta:f64 = 0.0;
@@ -343,9 +342,9 @@ fn policy_improvement(p:&mut Policy, g:&Graph, info:&AgentInfo, gi:&GraphInfo) -
 }
 
 pub fn run() {
-    let agent_info = AgentInfo { discount:0.9, theta:0.1, max_iter:128 };
+    let agent_info = AgentInfo { discount:0.9, theta:0.1, max_iter:1 };
     let state_range:usize = 20;
-    let mut graph_info = GraphInfo { 
+    let graph_info = GraphInfo { 
         move_limit:5, state_range:state_range as i32,
         dist_rent_0:Poisson::new(3, state_range),
         dist_rent_1:Poisson::new(4, state_range),
