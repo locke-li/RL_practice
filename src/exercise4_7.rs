@@ -22,6 +22,7 @@ struct GraphInfo {
     pub dist_return_1:Poisson,
     pub move_limit:i32,
     pub state_range:i32,
+    pub rent_reward:i32,
 }
 
 struct AgentInfo {
@@ -37,6 +38,7 @@ struct Policy {
 struct StateDesc {
     pub name: String,
     pub count: (i32, i32),
+    pub rent: (f64, f64),
 }
 
 struct State {
@@ -65,8 +67,8 @@ struct Transition {
 }
 
 impl StateDesc {
-    fn new(name:String, count:(i32, i32)) -> Self {
-        Self { name, count }
+    fn new(name:String, count:(i32, i32), rent:(f64, f64)) -> Self {
+        Self { name, count, rent }
     }
 }
 
@@ -346,6 +348,7 @@ pub fn run() {
     let state_range:usize = 20;
     let graph_info = GraphInfo { 
         move_limit:5, state_range:state_range as i32,
+        rent_reward:10,
         dist_rent_0:Poisson::new(3, state_range),
         dist_rent_1:Poisson::new(4, state_range),
         dist_return_0:Poisson::new(3, state_range),
