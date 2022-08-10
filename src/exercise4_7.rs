@@ -25,6 +25,12 @@ struct GraphInfo {
     pub rent_reward:i32,
 }
 
+struct GraphChange {
+    pub free_shuttle:i32,
+    pub parking_limit:i32,
+    pub parking_cost:i32,
+}
+
 struct AgentInfo {
     pub discount:f64,
     pub theta:f64,
@@ -206,25 +212,36 @@ impl Graph {
         s.action = map.into_iter().collect();
     }
 
-    fn setup(&mut self, gi:&GraphInfo) {
+    fn setup(&mut self, gi:&GraphInfo, c:Option<&GraphChange>) {
         for m in 0..=gi.state_range {
             for n in 0..=gi.state_range {
                 let rent0 = Graph::expected_count(m, &gi.dist_rent_0);
                 let rent1 = Graph::expected_count(n, &gi.dist_rent_1);
                 let desc = StateDesc::new(Graph::state_name(m, n), (m, n), (rent0, rent1));
-                let state_reward = (rent0 + rent1) * gi.rent_reward as f64;
+                let state_reward = (rent0 + rent1) * gi.rent_reward as f64
+                    + match c {
+                        Some(v) => {
+                            //possible parking costs
+                            (if m > v.parking_limit { -v.parking_cost } else { 0 }) +
+                            if n > v.parking_limit { -v.parking_cost } else { 0 }
+                        }
+                        None => 0,
+                    } as f64;
                 self.add_state(desc, state_reward);
             }
         }
         let m = gi.move_limit;
         for k in -m..=m {
             let desc = ActionDesc::new(Graph::action_name(k), k);
-            self.add_action(desc, k.abs() as f64 * -2.0);
+            let action_reward = (k.abs() - match c {
+                Some(v) => v.free_shuttle,
+                None => 0,
+            }).max(0) as f64 * -2.0;
+            self.add_action(desc, action_reward);
         }
         let m = gi.move_limit;
         for s in self.state.iter_mut() {
             let prob = 1.0 / (m * 2 + 1) as f64;
-            // println!("{} {} {} {}", c0, c1, range0, range1);
             //self transition
             Graph::add_transition_for_move(s, 0, gi, prob);
             //move out
@@ -254,7 +271,6 @@ impl Graph {
     }
 
     fn print_state(&self, gi:&GraphInfo) {
-        //TODO
         let limit = gi.state_range;
         let mut count = 0;
         for s in self.state.iter() {
@@ -269,11 +285,10 @@ impl Graph {
     }
 
     fn print_reward(&self, gi:&GraphInfo) {
-        //TODO
         let limit = gi.state_range;
         let mut count = 0;
         for s in self.state.iter() {
-            print!("\t{}", s.reward);
+            print!("\t{:.1}", s.reward);
             count += 1;
             if count > limit {
                 count = 0;
@@ -284,7 +299,6 @@ impl Graph {
     }
 
     fn print_policy(&self, p:&Policy, gi:&GraphInfo) {
-        //TODO
         let limit = gi.state_range;
         let mut count = 0;
         for s in self.state.iter() {
@@ -374,9 +388,18 @@ pub fn run() {
         dist_return_0:Poisson::new(3, state_range),
         dist_return_1:Poisson::new(2, state_range),
     };
+    let graph_change = GraphChange {
+        free_shuttle:1,
+        parking_limit:10,
+        parking_cost:4,
+    };
+    //changes switch
+    let option_change = 
+        // Some(&graph_change);
+        None;
     let mut g = Graph::new(&graph_info);
-    g.setup(&graph_info);
-    // g.print_reward();
+    g.setup(&graph_info, option_change);
+    g.print_reward(&graph_info);
     // g.print_info();
     let mut p = Policy::new(&graph_info);
     loop {
