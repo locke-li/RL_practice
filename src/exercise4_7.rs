@@ -153,10 +153,9 @@ impl Graph {
 
     fn state_reward(v:i32, dist:&Poisson) -> f64 {
         let v = v as usize;
-        let vf = v as f64;
         let mut r:f64 = 0.0;
-        r += (0..=v).map(|v| dist.pmf(v) * vf).sum::<f64>();
-        r += (1.0 - dist.cdf(v)) * vf;
+        r += (0..=v).map(|n| dist.pmf(n) * n as f64).sum::<f64>();
+        r += (1.0 - dist.cdf(v)) * v as f64;
         r
     }
 
