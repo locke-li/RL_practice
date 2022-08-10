@@ -84,6 +84,12 @@ impl State {
     fn count(&self) -> (i32, i32) {
         self.desc.count
     }
+
+    fn expected_count(&self) -> (f64, f64) {
+        let c = self.desc.count;
+        let r = self.desc.rent;
+        (c.0 as f64 - r.0, c.1 as f64 - r.1)
+    }
 }
 
 impl PartialEq for State {
@@ -151,7 +157,7 @@ impl Graph {
         format!("{:+}", v)
     }
 
-    fn state_reward(v:i32, dist:&Poisson) -> f64 {
+    fn expected_count(v:i32, dist:&Poisson) -> f64 {
         let v = v as usize;
         let mut r:f64 = 0.0;
         r += (0..=v).map(|n| dist.pmf(n) * n as f64).sum::<f64>();
@@ -160,18 +166,30 @@ impl Graph {
     }
 
     fn add_transition_for_move(s:&mut State, k:i32, gi:&GraphInfo, prob_a:f64) {
-        let (c0, c1) = s.count();
+        let (c0, c1) = s.expected_count();
         let dist0 = &gi.dist_return_0;
         let dist1 = &gi.dist_return_1;
         let sr = gi.state_range;
-        for n0 in 0..=sr {
-            for n1 in  0..=sr {
-                let to = (min(sr, c0 - k + n0), min(sr, c1 + k + n1));
-                if to.0 < 0 || to.1 < 0 { continue }
-                let prob = prob_a * dist0.pmf(n0 as usize) * dist1.pmf(n1 as usize);
-                s.transition.push(Transition { action:k, from:s.count(), to, prob });
-            }
-        }
+        // for n0 in 0..=sr {
+        //     for n1 in  0..=sr {
+        //         let to = (
+        //             max(min(sr, c0 as i32 - k + n0), 0),
+        //             max(min(sr, c1 as i32 + k + n1), 0),
+        //         );
+        //         let prob = prob_a * dist0.pmf(n0 as usize) * dist1.pmf(n1 as usize);
+        //         s.transition.push(Transition { action:k, from:s.count(), to, prob });
+        //     }
+        // }
+        let c0 = c0 as f64;
+        let c1 = c1 as f64;
+        let kf = k as f64;
+        let return0 = Graph::expected_count(sr, dist0);
+        let return1 = Graph::expected_count(sr, dist1);
+        let to = (
+            max(min(sr, (c0 - kf + return0).round() as i32), 0), 
+            max(min(sr, (c1 + kf + return1).round() as i32), 0)
+        );
+        s.transition.push(Transition { action:k, from:s.count(), to, prob:prob_a });
     }
 
     fn parse_action(s:&mut State) {
@@ -191,8 +209,11 @@ impl Graph {
     fn setup(&mut self, gi:&GraphInfo) {
         for m in 0..=gi.state_range {
             for n in 0..=gi.state_range {
-                let desc = StateDesc::new(Graph::state_name(m, n), (m, n));
-                self.add_state(desc, Graph::state_reward(m, &gi.dist_rent_0) + Graph::state_reward(n, &gi.dist_rent_1));
+                let rent0 = Graph::expected_count(m, &gi.dist_rent_0);
+                let rent1 = Graph::expected_count(n, &gi.dist_rent_1);
+                let desc = StateDesc::new(Graph::state_name(m, n), (m, n), (rent0, rent1));
+                let state_reward = (rent0 + rent1) * gi.rent_reward as f64;
+                self.add_state(desc, state_reward);
             }
         }
         let m = gi.move_limit;
