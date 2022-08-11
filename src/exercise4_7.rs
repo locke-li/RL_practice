@@ -171,21 +171,11 @@ impl Graph {
         r
     }
 
-    fn add_transition_for_move(s:&mut State, k:i32, gi:&GraphInfo, prob_a:f64) {
+    fn add_transition_for_move(s:&mut State, k:i32, gi:&GraphInfo) {
         let (c0, c1) = s.expected_count();
         let dist0 = &gi.dist_return_0;
         let dist1 = &gi.dist_return_1;
         let sr = gi.state_range;
-        // for n0 in 0..=sr {
-        //     for n1 in  0..=sr {
-        //         let to = (
-        //             max(min(sr, c0 as i32 - k + n0), 0),
-        //             max(min(sr, c1 as i32 + k + n1), 0),
-        //         );
-        //         let prob = prob_a * dist0.pmf(n0 as usize) * dist1.pmf(n1 as usize);
-        //         s.transition.push(Transition { action:k, from:s.count(), to, prob });
-        //     }
-        // }
         let c0 = c0 as f64;
         let c1 = c1 as f64;
         let kf = k as f64;
@@ -195,7 +185,7 @@ impl Graph {
             max(min(sr, (c0 - kf + return0).round() as i32), 0), 
             max(min(sr, (c1 + kf + return1).round() as i32), 0)
         );
-        s.transition.push(Transition { action:k, from:s.count(), to, prob:prob_a });
+        s.transition.push(Transition { action:k, from:s.count(), to, prob:1.0 });
     }
 
     fn parse_action(s:&mut State) {
@@ -209,7 +199,7 @@ impl Graph {
             list.push(i);
             i += 1;
         }
-        s.action = map.into_iter().collect();
+        s.action = map;
     }
 
     fn setup(&mut self, gi:&GraphInfo, c:Option<&GraphChange>) {
@@ -241,16 +231,15 @@ impl Graph {
         }
         let m = gi.move_limit;
         for s in self.state.iter_mut() {
-            let prob = 1.0 / (m * 2 + 1) as f64;
             //self transition
-            Graph::add_transition_for_move(s, 0, gi, prob);
+            Graph::add_transition_for_move(s, 0, gi);
             //move out
             for k in 1..=m {
-                Graph::add_transition_for_move(s, k, gi, prob);
+                Graph::add_transition_for_move(s, k, gi);
             }
             //move in
             for k in 1..=m {
-                Graph::add_transition_for_move(s, -k, gi, prob);
+                Graph::add_transition_for_move(s, -k, gi);
             }
             Graph::parse_action(s);
         }
