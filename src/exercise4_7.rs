@@ -224,9 +224,9 @@ impl Graph {
         for k in -m..=m {
             let desc = ActionDesc::new(Graph::action_name(k), k);
             let action_reward = (k.abs() - match c {
-                Some(v) => v.free_shuttle,
+                Some(v) => if k > 0 { v.free_shuttle } else { 0 },
                 None => 0,
-            }).max(0) as f64 * -2.0;
+            }) as f64 * -2.0;
             self.add_action(desc, action_reward);
         }
         let m = gi.move_limit;
