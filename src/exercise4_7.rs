@@ -213,8 +213,8 @@ impl Graph {
     }
 
     fn setup(&mut self, gi:&GraphInfo, c:Option<&GraphChange>) {
-        for m in 0..=gi.state_range {
             for n in 0..=gi.state_range {
+            for m in 0..=gi.state_range {
                 let rent0 = Graph::expected_count(m, &gi.dist_rent_0);
                 let rent1 = Graph::expected_count(n, &gi.dist_rent_1);
                 let desc = StateDesc::new(Graph::state_name(m, n), (m, n), (rent0, rent1));
