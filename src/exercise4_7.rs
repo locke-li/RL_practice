@@ -50,7 +50,7 @@ struct StateDesc {
 struct State {
     pub desc: StateDesc,
     pub reward: f64,
-    pub action: Vec<(i32, Vec<i32>)>,
+    pub action: BTreeMap<i32, Vec<i32>>,
     pub transition: Vec<Transition>,
     pub state_v: f64,
 }
@@ -80,7 +80,7 @@ impl StateDesc {
 
 impl State {
     fn new(desc:StateDesc, reward:f64) -> Self {
-        Self { desc, reward, action: Vec::new(), transition: Vec::new(), state_v: 0.0}
+        Self { desc, reward, action: BTreeMap::new(), transition: Vec::new(), state_v: 0.0}
     }
 
     fn name(&self) -> &str {
@@ -326,7 +326,7 @@ impl Policy {
     }
 }
 
-fn evaluate_policy(g:&mut Graph, info:&AgentInfo) {
+fn evaluate_policy(g:&mut Graph, p:&Policy, info:&AgentInfo) {
     let mut i = 0;
     let pg:*const Graph = g;
     //hack to grant shared access to graph
@@ -335,7 +335,10 @@ fn evaluate_policy(g:&mut Graph, info:&AgentInfo) {
         let mut delta:f64 = 0.0;
         for s in g.state.iter_mut() {
             let v_old = s.state_v;
-            let v_new = s.transition.iter()
+            let a = p.state_action[s.count()];
+            let t_index = &s.action[&a];
+            let v_new = t_index.iter()
+                .map(|t| &s.transition[*t as usize] )
                 .map(|t| t.prob * t.reward(gs, info.discount))
                 .sum::<f64>();
             s.state_v = v_new;
@@ -362,13 +365,24 @@ fn policy_improvement(p:&mut Policy, g:&Graph, info:&AgentInfo, gi:&GraphInfo) -
                     .map(|t| t.prob * t.reward(g, info.discount))
                     .sum::<f64>()))
             .max_by(|(_, x), (_, y)| x.total_cmp(y)).unwrap();
-        // s.action.iter()
-        //     .map(|(_, vec_t)| (vec_t[0].action, vec_t))
-        //     .map(|(a, vec_t)|
-        //         (a, vec_t.iter().map(|t| t.prob * t.reward(discount)).sum::<f32>() / vec_t.len() as f32))
-        //     .for_each(|(a, v)| println!("{} {}", a, v));
         let state_stable = a_old == a_new;
-        // if !state_stable { println!("{:?} {:+} {:+}", sn, a_old, a_new); }
+        // if !state_stable {
+        //     println!("{:?} {:+} {:+}", sn, a_old, a_new);
+        // s.action.iter()
+        //     .map(|(a, vec_t)|
+        //         (a, vec_t.iter()
+        //         .map(|t| &s.transition[*t as usize])
+        //         .map(|t| t.prob * t.reward(g, info.discount))
+        //         .sum::<f64>()))
+        //     .for_each(|(a, v)| println!("{:+} {:.1}", a, v));
+        //     s.action.iter()
+        //     .map(|(a, vec_t)|
+        //         (a, vec_t.iter()
+        //         .map(|t| &s.transition[*t as usize])
+        //         .map(|t| g.state[t.to].state_v)
+        //         .sum::<f64>()))
+        //     .for_each(|(a, v)| println!("{:+} {:.1}", a, v));
+        // }
         // println!("{} {}", sn, a_new);
         p.state_action[sn] = a_new;
         policy_stable = policy_stable && state_stable;
@@ -403,7 +417,7 @@ pub fn run() {
     // g.print_info();
     let mut p = Policy::new(&graph_info);
     loop {
-        evaluate_policy(&mut g, &agent_info);
+        evaluate_policy(&mut g, &p, &agent_info);
         // g.print_state();
         let stable = policy_improvement(&mut p, &g, &agent_info, &graph_info);
         g.print_state(&graph_info);
