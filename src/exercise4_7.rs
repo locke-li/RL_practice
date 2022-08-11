@@ -122,10 +122,6 @@ impl Action {
     fn name(&self) -> &str {
         &self.desc.name
     }
-
-    fn count(&self) -> i32 {
-        self.desc.count
-    }
 }
 
 impl Transition {
@@ -152,11 +148,6 @@ impl Graph {
     fn add_action(&mut self, desc:ActionDesc, reward:f64) {
         let action = Action::new(desc, reward);
         self.action.push(action);
-    }
-
-    fn add_transition(&mut self, action:i32, from:(i32, i32), to:(i32, i32), prob:f64) {
-        let s_from = &mut self.state[from];
-        s_from.transition.push(Transition { action, from, to, prob });
     }
 
     fn state_name(m:i32, n:i32) -> String {
@@ -407,8 +398,8 @@ pub fn run() {
     };
     //changes switch
     let option_change = 
-        // Some(&graph_change);
-        None;
+        Some(&graph_change);
+        // None;
     let mut g = Graph::new(&g_info);
     g.setup(&g_info, option_change);
     g.print_reward(&g_info);
