@@ -91,6 +91,10 @@ impl State {
         self.desc.count
     }
 
+    fn rent(&self) -> (f64, f64) {
+        self.desc.rent
+    }
+
     fn expected_count(&self) -> (f64, f64) {
         let c = self.desc.count;
         let r = self.desc.rent;
@@ -203,7 +207,7 @@ impl Graph {
     }
 
     fn setup(&mut self, gi:&GraphInfo, c:Option<&GraphChange>) {
-            for n in 0..=gi.state_range {
+        for n in 0..=gi.state_range {
             for m in 0..=gi.state_range {
                 let rent0 = Graph::expected_count(m, &gi.dist_rent_0);
                 let rent1 = Graph::expected_count(n, &gi.dist_rent_1);
@@ -245,16 +249,21 @@ impl Graph {
         }
     }
 
-    fn print_info(&self) {
+    fn print_info(&self, gi:&GraphInfo, p:&Policy, discount:f64) {
         println!("action:");
         for a in self.action.iter() {
             println!("\t{}:{}", a.name(), a.reward);
         }
         println!("state:");
+        let sr = gi.state_range;
         for s in self.state.iter() {
-            println!("\t{}:{}", s.name(), s.reward);
+            let (r0, r1) = s.rent();
+            let return0 = Graph::expected_count(sr, &gi.dist_return_0);
+            let return1 = Graph::expected_count(sr, &gi.dist_return_1);
+            let a = p.state_action[s.count()];
+            println!("\t{}|{:+}:{:.1} | {:.1} {:.1} | {:.1} {:.1}", s.name(), a, s.reward, r0, r1, return0, return1);
             for t in s.transition.iter() {
-                println!("\t\t{}:{:?}->{:?}|{}", t.action, t.from, t.to, t.prob);
+                println!("\t\t{:+}:->{:?} {:.1}|{:.1} {:.2}", t.action, t.to, t.reward(self, discount), self.state[t.to].state_v, t.prob);
             }
         }
     }
@@ -340,7 +349,7 @@ fn evaluate_policy(g:&mut Graph, p:&Policy, info:&AgentInfo) {
     }
 }
 
-fn policy_improvement(p:&mut Policy, g:&Graph, info:&AgentInfo, gi:&GraphInfo) -> bool {
+fn improve_policy(p:&mut Policy, g:&Graph, info:&AgentInfo, gi:&GraphInfo) -> bool {
     println!("improvement:");
     let mut policy_stable = true;
     for s in g.state.iter() {
@@ -357,7 +366,7 @@ fn policy_improvement(p:&mut Policy, g:&Graph, info:&AgentInfo, gi:&GraphInfo) -
         let state_stable = a_old == a_new;
         // if !state_stable {
         //     println!("{:?} {:+} {:+}", sn, a_old, a_new);
-        // s.action.iter()
+        //     s.action.iter()
         //     .map(|(a, vec_t)|
         //         (a, vec_t.iter()
         //         .map(|t| &s.transition[*t as usize])
@@ -381,9 +390,9 @@ fn policy_improvement(p:&mut Policy, g:&Graph, info:&AgentInfo, gi:&GraphInfo) -
 }
 
 pub fn run() {
-    let agent_info = AgentInfo { discount:0.9, theta:0.1, max_iter:1 };
+    let agent_info = AgentInfo { discount:0.9, theta:0.1, max_iter:16 };
     let state_range:usize = 20;
-    let graph_info = GraphInfo { 
+    let g_info = GraphInfo { 
         move_limit:5, state_range:state_range as i32,
         rent_reward:10,
         dist_rent_0:Poisson::new(3, state_range),
@@ -400,18 +409,19 @@ pub fn run() {
     let option_change = 
         // Some(&graph_change);
         None;
-    let mut g = Graph::new(&graph_info);
-    g.setup(&graph_info, option_change);
-    g.print_reward(&graph_info);
-    // g.print_info();
-    let mut p = Policy::new(&graph_info);
+    let mut g = Graph::new(&g_info);
+    g.setup(&g_info, option_change);
+    g.print_reward(&g_info);
+    // g.print_info(&graph_info, &p);
+    let mut p = Policy::new(&g_info);
     loop {
         evaluate_policy(&mut g, &p, &agent_info);
         // g.print_state();
-        let stable = policy_improvement(&mut p, &g, &agent_info, &graph_info);
-        g.print_state(&graph_info);
-        g.print_policy(&p, &graph_info);
+        let stable = improve_policy(&mut p, &g, &agent_info, &g_info);
+        // g.print_state(&g_info);
+        g.print_policy(&p, &g_info);
         if stable { break }
     }
     println!("finish");
+    g.print_info(&g_info, &p, agent_info.discount);
 }
