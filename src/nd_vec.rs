@@ -66,7 +66,7 @@ impl<T> NdVec2<T> {
     }
 
     pub fn index(&self, i:(i32, i32)) -> usize {
-        ((i.0 + self.offset.0) * self.dimension.1 + i.1 + self.offset.1) as usize
+        (i.0 + self.offset.0 + (i.1 + self.offset.1) * self.dimension.0) as usize
     }
 
     pub fn push(&mut self, v:T) {
