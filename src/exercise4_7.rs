@@ -1,5 +1,5 @@
 
-
+use std::error::Error;
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry::{ Vacant, Occupied };
 use std::cmp::{ min, max };
@@ -380,7 +380,7 @@ fn improve_policy(p:&mut Policy, g:&Graph, info:&AgentInfo, gi:&GraphInfo) -> bo
     policy_stable
 }
 
-pub fn run() {
+pub fn run() -> Result<(), Box<dyn Error>> {
     let agent_info = AgentInfo { discount:0.9, theta:0.1, max_iter:16 };
     let state_range:usize = 20;
     let g_info = GraphInfo { 
@@ -415,4 +415,5 @@ pub fn run() {
     }
     println!("finish");
     g.print_info(&g_info, &p, agent_info.discount);
+    Ok(())
 }
