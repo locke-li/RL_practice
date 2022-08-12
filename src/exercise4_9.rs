@@ -109,6 +109,7 @@ fn value_iteration(g:&mut Graph, gi:&GraphInfo, canvas:&DrawingArea<BitMapBacken
         .build_cartesian_2d(0..gi.state_range, -0.1f64..1.0f64)?;
     chart.configure_mesh().draw()?;
     let mut sweep = 0;
+    let sweep_band = 10;
     loop {
         let mut delta:f64 = 0.0;
         for k in s_min..=s_max {
@@ -120,12 +121,16 @@ fn value_iteration(g:&mut Graph, gi:&GraphInfo, canvas:&DrawingArea<BitMapBacken
             s.state_v = v_new;
             delta = delta.max((v_new - v_old).abs());
         }
-        let sweepf = ((1.0f32).min(sweep as f32 / 10.0) * 255.0).round() as u8;
+        let sweepf = ((1.0f32).min(sweep as f32 / sweep_band as f32) * 255.0).round() as u8;
         let color = if sweep % 2 == 0 { RGBColor { 0:sweepf, 1:128, 2:128 } }
             else { RGBColor { 0:128, 1:sweepf, 2:128 } };
-        chart.draw_series(LineSeries::new(
+        let line = chart.draw_series(LineSeries::new(
             (s_min..s_max).map(|i| (i, g.state[i as usize].state_v))
             , &color))?;
+        if sweep < sweep_band {
+            line.label(format!("sweep {}", sweep));
+            // .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], color));
+        }
         // gs.print_state(&gi);
         sweep += 1;
         if delta < gi.theta { break }

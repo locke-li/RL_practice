@@ -7,7 +7,9 @@ mod exercise4_9;
 fn main() {
     let index = "4_9";
     let ret = match index {
+        //policy iteraction: policy evaluation -> policy improvement
         "4_7" => exercise4_7::run(),
+        //value iteraction -> policy
         "4_9" => exercise4_9::run(),
         _ => Err(format!("invalid index {}", index).into()),
     };
