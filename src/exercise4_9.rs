@@ -175,17 +175,14 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     };
     g.setup(&g_info);
     let mut p = Policy::new(&g_info);
-    let file = format!("4_9_p{}_v.png", g_info.p_win);
-    let canvas_state = BitMapBackend::new(&file, (1280, 720)).into_drawing_area();
-    canvas_state.fill(&WHITE)?;
-    let file = format!("4_9_p{}_p.png", g_info.p_win);
-    let canvas_policy = BitMapBackend::new(&file, (1280, 720)).into_drawing_area();
-    canvas_policy.fill(&WHITE)?;
-    value_iteration(&mut g, &g_info, &canvas_state)?;
+    let file = format!("4_9_p{}.png", g_info.p_win);
+    let canvas = BitMapBackend::new(&file, (1440, 1440)).into_drawing_area();
+    canvas.fill(&WHITE)?;
+    let canvas_split = canvas.split_evenly((2, 1));
+    value_iteration(&mut g, &g_info, &canvas_split[0])?;
     check_policy(&mut p, &g, &g_info);
     g.print_policy(&p, &g_info);
-    g.draw_policy(&p, &g_info, &canvas_policy)?;
-    canvas_state.present()?;
-    canvas_policy.present()?;
+    g.draw_policy(&p, &g_info, &canvas_split[1])?;
+    canvas.present()?;
     Ok(())
 }
