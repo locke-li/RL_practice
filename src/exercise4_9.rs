@@ -128,13 +128,18 @@ fn value_iteration(g:&mut Graph, gi:&GraphInfo, canvas:&DrawingArea<BitMapBacken
             (s_min..s_max).map(|i| (i, g.state[i as usize].state_v))
             , &color))?;
         if sweep < sweep_band {
-            line.label(format!("sweep {}", sweep));
-            // .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], color));
+            line.label(format!("sweep {}", sweep))
+            .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], color));
         }
         // gs.print_state(&gi);
         sweep += 1;
         if delta < gi.theta { break }
     }
+    chart
+        .configure_series_labels()
+        .background_style(&WHITE.mix(0.8))
+        .border_style(&BLACK)
+        .draw()?;
     Ok(())
 }
 
