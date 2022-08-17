@@ -57,7 +57,6 @@ struct State {
 
 struct ActionDesc {
     pub name: String,
-    pub count: i32,
 }
 
 struct Action {
@@ -109,8 +108,8 @@ impl PartialEq for State {
 }
 
 impl ActionDesc {
-    fn new(name:String, count:i32) -> Self {
-        Self { name, count }
+    fn new(name:String) -> Self {
+        Self { name }
     }
 }
 
@@ -217,7 +216,7 @@ impl Graph {
         }
         let m = gi.move_limit;
         for k in -m..=m {
-            let desc = ActionDesc::new(Graph::action_name(k), k);
+            let desc = ActionDesc::new(Graph::action_name(k));
             let action_reward = (k.abs() - match c {
                 Some(v) => if k > 0 { v.free_shuttle } else { 0 },
                 None => 0,
@@ -259,19 +258,19 @@ impl Graph {
         }
     }
 
-    fn print_state(&self, gi:&GraphInfo) {
-        let limit = gi.state_range;
-        let mut count = 0;
-        for s in self.state.iter() {
-            print!("\t{:.1}", s.state_v);
-            count += 1;
-            if count > limit {
-                count = 0;
-                println!();
-            }
-        }
-        println!();
-    }
+    // fn print_state(&self, gi:&GraphInfo) {
+    //     let limit = gi.state_range;
+    //     let mut count = 0;
+    //     for s in self.state.iter() {
+    //         print!("\t{:.1}", s.state_v);
+    //         count += 1;
+    //         if count > limit {
+    //             count = 0;
+    //             println!();
+    //         }
+    //     }
+    //     println!();
+    // }
 
     fn print_reward(&self, gi:&GraphInfo) {
         let limit = gi.state_range;
@@ -340,7 +339,7 @@ fn evaluate_policy(g:&mut Graph, p:&Policy, info:&AgentInfo) {
     }
 }
 
-fn improve_policy(p:&mut Policy, g:&Graph, info:&AgentInfo, gi:&GraphInfo) -> bool {
+fn improve_policy(p:&mut Policy, g:&Graph, info:&AgentInfo, _gi:&GraphInfo) -> bool {
     println!("improvement:");
     let mut policy_stable = true;
     for s in g.state.iter() {
@@ -375,7 +374,7 @@ fn improve_policy(p:&mut Policy, g:&Graph, info:&AgentInfo, gi:&GraphInfo) -> bo
         // println!("{} {}", sn, a_new);
         p.state_action[sn] = a_new;
         policy_stable = policy_stable && state_stable;
-        // g.print_policy(p, gi);
+        // g.print_policy(p, _gi);
     }
     policy_stable
 }

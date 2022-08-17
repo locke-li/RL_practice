@@ -25,10 +25,6 @@ impl<T> NdVec1<T> {
     pub fn iter(&self) -> std::slice::Iter<T> {
         self.data.iter()
     }
-
-    pub fn iter_mut(&mut self) -> std::slice::IterMut<T> {
-        self.data.iter_mut()
-    }
 }
 
 impl<T> Index<i32> for NdVec1<T> {

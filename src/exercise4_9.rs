@@ -55,15 +55,15 @@ impl Graph {
         s.reward + r_win + r_lose
     }
 
-    fn print_state(&self, gi:&GraphInfo) {
-        let mut k = 0;
-        for s in self.state.iter() {
-            print!("\t{}: {:.2}", s.capital, s.state_v);
-            k += 1;
-            if k> 0 && k % gi.print_per_line == 0 { println!(); }
-        }
-        println!();
-    }
+    // fn print_state(&self, gi:&GraphInfo) {
+    //     let mut k = 0;
+    //     for s in self.state.iter() {
+    //         print!("\t{}: {:.2}", s.capital, s.state_v);
+    //         k += 1;
+    //         if k> 0 && k % gi.print_per_line == 0 { println!(); }
+    //     }
+    //     println!();
+    // }
 
     fn print_policy(&self, p:&Policy, gi:&GraphInfo) {
         let p_v = &p.state_action;
