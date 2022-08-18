@@ -1,10 +1,12 @@
 use std::cmp::{ min, max };
 use std::collections::BTreeMap;
+use std::collections::btree_map::Entry::{ Vacant, Occupied };
 use std::error::Error;
 use rand::prelude::*;
 
-type StateKey = (i32, i32, i32, i32);
+type State = ((i32, i32), (i32, i32));
 type Vec2 = (i32, i32);
+type StateAction = (State, Vec2);
 
 struct Field{
     boundary:Vec<Vec2>,//index:y, value:(x_min, x_max)
@@ -15,6 +17,7 @@ struct Field{
 struct AgentInfo {
     pub velocity_max:i32,
     pub action:Vec2,
+    pub a_space:(i32, f32),
     pub step_reward:i32,
     pub p_vel_inc0:f64,
     pub epsilon:f64,
@@ -28,13 +31,17 @@ struct Agent<'a> {
 
 struct Episode {
     rng:ThreadRng, 
-    pub state:Vec<StateKey>,
+    pub state:Vec<State>,
     pub action:Vec<Vec2>,
     pub reward:i32,
 }
 
+struct Graph {
+    pub q:BTreeMap<State, BTreeMap<Vec2, (f64, i32)>>,
+}
+
 struct Policy {
-    state_action:BTreeMap<StateKey, Vec2>,
+    state_action:BTreeMap<State, Vec2>,
 }
 
 impl Field {
@@ -80,6 +87,30 @@ impl Field {
             .append_row((17, 32), 1);
         self.finish_line = 32;
     }
+
+    fn reset_if_outside(&self, p:&mut Vec2, v:&mut Vec2) {
+        let row = match self.boundary.get(p.1 as usize) {
+            Some(v) => v,
+            None => return self.reset_to_start(p, v),
+        };
+        if p.0 < row.0 || p.1 > row.1 { self.reset_to_start(p, v) }
+    }
+
+    fn reset_to_start(&self, p:&mut Vec2, v:&mut Vec2) {
+        *v = (0, 0);
+        p.1 = self.start_line;
+        let row = &self.boundary[self.start_line as usize];
+        p.0 = if p.0 < row.0 { row.0 }
+        else if p.0 > row.1 { row.1 }
+        else { p.0 };
+    }
+}
+
+impl AgentInfo {
+    fn setup(&mut self) {
+        let r = self.action.1 - self.action.0;
+        self.a_space = (r, (r * r - 1) as f32);
+    }
 }
 
 impl<'a> Agent<'a> {
@@ -95,10 +126,8 @@ impl<'a> Agent<'a> {
         self.velocity = (v0, v1);
     }
 
-    fn state(&self) -> StateKey {
-        let p = self.position;
-        let v = self.velocity;
-        (p.0, p.1, v.0, v.1)
+    fn state(&self) -> State {
+        (self.position, self.velocity)
     }
 }
 
@@ -107,27 +136,83 @@ impl Episode {
         Self { state:Vec::new(), action:Vec::new(), reward:0, rng:rand::thread_rng() }
     }
 
-    fn step(b:&mut Policy, f:&Field, a:&mut Agent, p_zero:f64, epsilon:f64, rng:&mut ThreadRng) -> (StateKey, Vec2) {
+    fn Vec2Add(a:Vec2, b:Vec2) -> Vec2 {
+        (a.0 + b.0, a.1 + b.1)
+    }
+
+    fn step(b:&mut Policy, f:&Field, a:&mut Agent, rng:&mut ThreadRng) -> StateAction {
         let s = a.state();
-        let r = rng.gen();
-        if r < epsilon {
-            //explore
+        let info = a.info;
+        let action = info.action;
+        let (act_r, act_s)= info.a_space;
+        let v0 = -(s.1).0;
+        let v1 = -(s.1).1;
+        let act:Vec2;
+        let r:f64 = rng.gen();
+        if r > info.epsilon {
+            //equiprobable explore
+            let mut aa = (rng.gen::<f32>() * act_s) as i32;
+            let skip = v0 - action.0 + (v1 - action.1) * act_r;
+            if aa >= skip {//velocity will become (0, 0)
+                aa += 1;
+            }
+            act = (aa % act_r + action.0, aa / act_r + action.1);
         }
+        else {
+            //greedy with policy
+            act = match b.state_action.get(&s) {
+                Some(v) => *v,
+                None => if v0 == 0 && v1 == 0 { (1, 1) }
+                        else { (0, 0) },
+            };
+        }
+        let v = &mut a.velocity;
+        v.0 = min(max(v.0 + act.0, action.0), action.1);
+        v.1 = min(max(v.1 + act.1, action.0), action.1);
+        let p = &mut a.position;
+        p.0 = p.0 + v.0;
+        p.1 = p.1 + v.1;
+        f.reset_if_outside(p, v);
         (s, act)
     }
 
     fn generate(&mut self, b:&mut Policy, f:&Field, a:&mut Agent) {
-        let mut state:Vec<StateKey> = Vec::new();
-        let p_zero = a.info.p_vel_inc0;
-        let epsilon = a.info.epsilon;
+        let mut state:Vec<StateAction> = Vec::new();
     }
 }
 
+impl Graph {
+    fn new() -> Self {
+        Self { q:BTreeMap::new() }
+    }
+}
+
+impl Policy {
+    fn new() -> Self {
+        Self { state_action:BTreeMap::new() }
+    }
+}
+
+fn improve_policy(p:&mut Policy, g:&Graph, s:&State) {
+    let a_map = match g.q.get(s) {
+        Some(v) => v,
+        None => return,
+    };
+    let (a, _) = a_map.iter().max_by(|(_, (q0, _)), (_, (q1, _))| q0.total_cmp(q1)).unwrap();
+    p.state_action.insert(*s, *a);
+}
+
 pub fn run() -> Result<(), Box<dyn Error>> {
-    let a_info = AgentInfo {
+    let mut a_info = AgentInfo {
         velocity_max:5, action:(-1, 1), step_reward:-1,
+        a_space:(0, 0.0),
         p_vel_inc0:0.1, epsilon:0.25,
     };
+    a_info.setup();
     let agent = Agent::new((0, 0), (0, 0), &a_info);
+    let g_b = Graph::new();
+    let g_pi = Graph::new();
+    let b = Policy::new();
+    let pi = Policy::new();
     Ok(())
 }
