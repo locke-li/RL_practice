@@ -1,47 +1,56 @@
 use std::cmp::{ min, max };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::collections::btree_map::Entry::{ Vacant, Occupied };
 use std::error::Error;
 use rand::prelude::*;
 
-type State = ((i32, i32), (i32, i32));
 type Vec2 = (i32, i32);
-type StateAction = (State, Vec2);
+type State = (Vec2, Vec2);
+type Action = Vec2;
+// type StateAction = (State, Action);
+// type EpisodeStep = (State, Action, i32);
 
-struct Field{
-    boundary:Vec<Vec2>,//index:y, value:(x_min, x_max)
-    start_line:i32,//min-y-row
-    finish_line:i32,//max-x-column
+struct Field {
+    pub boundary:Vec<Vec2>,//index:y, value:(x_min, x_max)
+    pub start_line:i32,//min-y-row
+    pub finish_line:i32,//max-x-column
+}
+
+struct ControlInfo {
+    pub max_episode:usize,
+    pub episode_check_interval:usize,
+    pub epsilon:f64,
 }
 
 struct AgentInfo {
     pub velocity_max:i32,
-    pub action:Vec2,
+    pub action:Action,
     pub a_space:(i32, f32),
-    pub step_reward:i32,
+    pub step_reward:f64,
     pub p_vel_inc0:f64,
-    pub epsilon:f64,
 }
 
 struct Agent<'a> {
-    info:&'a AgentInfo,
+    pub info:&'a AgentInfo,
     pub velocity:Vec2,
     pub position:Vec2,
 }
 
 struct Episode {
-    rng:ThreadRng, 
+    rng:ThreadRng,
     pub state:Vec<State>,
-    pub action:Vec<Vec2>,
-    pub reward:i32,
+    pub action:Vec<Action>,
 }
 
-struct Graph {
-    pub q:BTreeMap<State, BTreeMap<Vec2, (f64, i32)>>,
+struct Graph<'a> {
+    pub g:f64,
+    pub w:f64,
+    pub q:BTreeMap<State, BTreeMap<Action, (f64, f64)>>,
+    pub p_ref:&'a mut Policy,
 }
 
 struct Policy {
-    state_action:BTreeMap<State, Vec2>,
+    state_action:BTreeMap<State, Action>,
 }
 
 impl Field {
@@ -88,12 +97,20 @@ impl Field {
         self.finish_line = 32;
     }
 
+    fn is_outside(&self, p:&Vec2) -> bool {
+        let row = match self.boundary.get(p.1 as usize) {
+            Some(v) => v,
+            None => return true,
+        };
+        p.0 < row.0 || p.0 > row.1
+    }
+
     fn reset_if_outside(&self, p:&mut Vec2, v:&mut Vec2) {
         let row = match self.boundary.get(p.1 as usize) {
             Some(v) => v,
             None => return self.reset_to_start(p, v),
         };
-        if p.0 < row.0 || p.1 > row.1 { self.reset_to_start(p, v) }
+        if p.0 < row.0 || p.0 > row.1 { self.reset_to_start(p, v) }
     }
 
     fn reset_to_start(&self, p:&mut Vec2, v:&mut Vec2) {
@@ -104,26 +121,47 @@ impl Field {
         else if p.0 > row.1 { row.1 }
         else { p.0 };
     }
+
+    fn crossed_finish_line(&self, p:&Vec2) -> bool {
+        p.0 >= self.finish_line
+    }
+
+    fn print(&self) {
+        let y_max = self.boundary.len() - 1;
+        for (i, (x_min, x_max)) in self.boundary.iter().rev().enumerate() {
+            for _ in 0..*x_min {
+                print!("       ");
+            }
+            for k in *x_min..=*x_max {
+                print!("|{:02},{:02}|", k, y_max - i);
+            }
+            println!();
+        }
+    }
 }
 
 impl AgentInfo {
     fn setup(&mut self) {
-        let r = self.action.1 - self.action.0;
+        let r = self.action.1 - self.action.0 + 1;
         self.a_space = (r, (r * r - 1) as f32);
     }
 }
 
 impl<'a> Agent<'a> {
-    fn new(velocity:Vec2, position:Vec2, info:&'a AgentInfo) -> Self {
-        Self { velocity, position, info }
+    fn new(info:&'a AgentInfo) -> Self {
+        Self { velocity:(0, 0), position:(0, 0), info }
     }
 
-    fn action(&mut self, v_a:Vec2) {
-        let v = self.velocity;
+    fn action(&mut self, v_a:&Action) -> (&mut Vec2, &mut Vec2) {
         let v_max = self.info.velocity_max;
-        let v0 = min(max(v.0 + v_a.0, 0), v_max);
-        let v1 = min(max(v.1 + v_a.1, 0), v_max);
-        self.velocity = (v0, v1);
+        let v_min = -v_max;
+        let v = &mut self.velocity;
+        v.0 = min(max(v.0 + v_a.0, v_min), v_max);
+        v.1 = min(max(v.1 + v_a.1, v_min), v_max);
+        let p = &mut self.position;
+        p.0 = p.0 + v.0;
+        p.1 = p.1 + v.1;
+        (p, v)
     }
 
     fn state(&self) -> State {
@@ -133,57 +171,165 @@ impl<'a> Agent<'a> {
 
 impl Episode {
     fn new() -> Self {
-        Self { state:Vec::new(), action:Vec::new(), reward:0, rng:rand::thread_rng() }
+        Self { state:Vec::new(), action:Vec::new(), rng:rand::thread_rng() }
     }
 
-    fn Vec2Add(a:Vec2, b:Vec2) -> Vec2 {
-        (a.0 + b.0, a.1 + b.1)
-    }
-
-    fn step(b:&mut Policy, f:&Field, a:&mut Agent, rng:&mut ThreadRng) -> StateAction {
+    fn step(b:&mut Policy, f:&Field, a:&mut Agent, c_info:&ControlInfo, rng:&mut ThreadRng) -> (State, Action, bool) {
         let s = a.state();
         let info = a.info;
-        let action = info.action;
+        let a_min = info.action.0;
         let (act_r, act_s)= info.a_space;
         let v0 = -(s.1).0;
         let v1 = -(s.1).1;
-        let act:Vec2;
+        let v_zero = v0 == 0 && v1 == 0;
+        let act:Action;
         let r:f64 = rng.gen();
-        if r > info.epsilon {
-            //equiprobable explore
-            let mut aa = (rng.gen::<f32>() * act_s) as i32;
-            let skip = v0 - action.0 + (v1 - action.1) * act_r;
-            if aa >= skip {//velocity will become (0, 0)
-                aa += 1;
-            }
-            act = (aa % act_r + action.0, aa / act_r + action.1);
+        if r < info.p_vel_inc0 && !v_zero {
+            act = (0, 0);
         }
         else {
-            //greedy with policy
-            act = match b.state_action.get(&s) {
-                Some(v) => *v,
-                None => if v0 == 0 && v1 == 0 { (1, 1) }
-                        else { (0, 0) },
-            };
+            let r:f64 = rng.gen();
+            if r > c_info.epsilon {
+                //equiprobable explore
+                let mut aa = (rng.gen::<f32>() * act_s) as i32;
+                let skip = v0 - a_min + (v1 - a_min) * act_r;
+                if aa >= skip {//velocity will become (0, 0)
+                    aa += 1;
+                }
+                act = (aa % act_r + a_min, aa / act_r + a_min);
+            }
+            else {
+                //greedy with policy
+                act = match b.state_action.get(&s) {
+                    Some(v) => *v,
+                    None => {
+                        let y = (s.0).1;
+                        if y > 25 { (1, 0) }
+                        else { (0, 1) }
+                    },
+                };
+            }
         }
-        let v = &mut a.velocity;
-        v.0 = min(max(v.0 + act.0, action.0), action.1);
-        v.1 = min(max(v.1 + act.1, action.0), action.1);
-        let p = &mut a.position;
-        p.0 = p.0 + v.0;
-        p.1 = p.1 + v.1;
+        let (p, v) = a.action(&act);
         f.reset_if_outside(p, v);
-        (s, act)
+        (s, act, f.crossed_finish_line(p))
     }
 
-    fn generate(&mut self, b:&mut Policy, f:&Field, a:&mut Agent) {
-        let mut state:Vec<StateAction> = Vec::new();
+    fn generate(&mut self, b:&mut Policy, f:&Field, a:&mut Agent, c_info:&ControlInfo) {
+        let state = &mut self.state;
+        let action = &mut self.action;
+        state.clear();
+        action.clear();
+        let start = &f.boundary[f.start_line as usize];
+        a.velocity = (0, 0);
+        let r = self.rng.gen_range(start.0..=start.1);
+        a.position = (r, f.start_line);
+        let mut finish = false;
+        while !finish {
+            let s:State;
+            let act:Action;
+            (s, act, finish) = Episode::step(b, f, a, c_info, &mut self.rng);
+            state.push(s);
+            action.push(act);
+            // println!("{:?}:{:?}->{:?}", s, act, a.state());
+        }
+        // println!("episode generated");
     }
 }
 
-impl Graph {
-    fn new() -> Self {
-        Self { q:BTreeMap::new() }
+impl<'a> Graph<'a> {
+    fn new(p_ref:&'a mut Policy) -> Self {
+        Self { q:BTreeMap::new(), g:0.0, w:1.0, p_ref }
+    }
+
+    fn mc_control(&mut self, ep:&Episode, a_info:&AgentInfo, c_info:&ControlInfo, b:Option<&Graph>) {
+        for k in (0..ep.state.len()).rev() {
+            let s = &ep.state[k];
+            let a = &ep.action[k];
+            let r = k as f64 * a_info.step_reward;
+            self.g += r;
+            let a_map = match self.q.entry(*s) {
+                Vacant(v) => v.insert(BTreeMap::new()),
+                Occupied(v) => v.into_mut(),
+            };
+            let q = match a_map.entry(*a) {
+                Vacant(v) => v.insert((0.0, 0.0)),
+                Occupied(v) => v.into_mut(),
+            };
+            q.1 += self.w;
+            q.0 += self.w * (self.g - q.0) / q.1;
+            let a_match = match self.improve_policy(s) {
+                Some(v) => v == a,
+                None => false,
+            };
+            match b {
+                Some(v) => {
+                    if !a_match { return }
+                    self.w *= 1.0 / v.p_epsilon(s, a, c_info);
+                },
+                None => {}
+            }
+        }
+    }
+
+    fn improve_policy(&mut self, s:&State) -> Option<&Action> {
+        let p = &mut *self.p_ref;
+        let a_map = match self.q.get(s) {
+            Some(v) => v,
+            None => return None,
+        };
+        let (a, _) = a_map.iter().max_by(|(_, (q0, _)), (_, (q1, _))| q0.total_cmp(q1)).unwrap();
+        p.state_action.insert(*s, *a);
+        Some(a)
+    }
+
+    fn p_epsilon(&self, s:&State, a:&Action, info:&ControlInfo) -> f64 {
+        let c_a = match self.q.get(s) {
+            Some(v) => v.len() as f64,
+            None => return 0.0,
+        };
+        match self.p_ref.state_action.get(s) {
+            Some(v) => {
+                let ep = info.epsilon;
+                if v == a { 1.0 - ep + ep / c_a }
+                else { ep / c_a }
+            },
+            None => return 0.0,
+        }
+    }
+
+    fn print_policy_sample(&self, f:&Field, info:&AgentInfo, msg:&str, p_start:Vec2) {
+        println!("{}", msg);
+        let map = &self.p_ref.state_action;
+        let mut visit:HashSet<Vec2> = HashSet::new();
+        visit.insert(p_start);
+        let mut agent = Agent::new(info);
+        agent.position = p_start;
+        loop {
+            let act = match map.get(&agent.state()) {
+                Some(v) => v,
+                None => {
+                    println!("state not found {:?}", &agent.state());
+                    break
+                }
+            };
+            agent.action(&act);
+            let p = &agent.position;
+            if visit.contains(p) { break }
+            visit.insert(*p);
+            if f.crossed_finish_line(p) || f.is_outside(p) { break }
+        }
+        let y_max = (f.boundary.len() - 1) as i32;
+        for (i, (x_min, x_max)) in f.boundary.iter().rev().enumerate() {
+            for _ in 0..*x_min {
+                print!("   ");
+            }
+            for k in *x_min..=*x_max {
+                if visit.contains(&(k, y_max - i as i32)) { print!("|+|") }
+                else { print!("| |"); }
+            }
+            println!();
+        }
     }
 }
 
@@ -193,26 +339,43 @@ impl Policy {
     }
 }
 
-fn improve_policy(p:&mut Policy, g:&Graph, s:&State) {
-    let a_map = match g.q.get(s) {
-        Some(v) => v,
-        None => return,
-    };
-    let (a, _) = a_map.iter().max_by(|(_, (q0, _)), (_, (q1, _))| q0.total_cmp(q1)).unwrap();
-    p.state_action.insert(*s, *a);
+fn iteration(c_info:&ControlInfo, a:&mut Agent, f:&Field, b:&mut Graph, pi:&mut Graph) {
+    let mut ep = Episode::new();
+    let mut ep_c = 0;
+    let a_info = a.info;
+    while ep_c < c_info.max_episode {
+        let mut ep_cc = 0;
+        while ep_cc < c_info.episode_check_interval {
+            ep_cc += 1;
+            ep.generate(b.p_ref, f, a, c_info);
+            b.mc_control(&ep, a.info, c_info, None);
+            pi.mc_control(&ep, a.info, c_info, Some(b));
+        }
+        b.print_policy_sample(f, a_info, "b:", (5, 0));
+        pi.print_policy_sample(f, a_info, "pi:", (5, 0));
+        ep_c += ep_cc;
+    }
 }
 
 pub fn run() -> Result<(), Box<dyn Error>> {
+    let mut f = Field::new();
+    f.setup_v1();
+    f.print();
     let mut a_info = AgentInfo {
-        velocity_max:5, action:(-1, 1), step_reward:-1,
-        a_space:(0, 0.0),
-        p_vel_inc0:0.1, epsilon:0.25,
+        velocity_max:5, action:(-1, 1), step_reward:-1.0,
+        p_vel_inc0:0.1, a_space:(0, 0.0),
     };
     a_info.setup();
-    let agent = Agent::new((0, 0), (0, 0), &a_info);
-    let g_b = Graph::new();
-    let g_pi = Graph::new();
-    let b = Policy::new();
-    let pi = Policy::new();
+    let c_info = ControlInfo {
+        max_episode:1000,
+        episode_check_interval:100,
+        epsilon:0.2,
+    };
+    let mut agent = Agent::new(&a_info);
+    let mut b = Policy::new();
+    let mut pi = Policy::new();
+    let mut g_b = Graph::new(&mut b);
+    let mut g_pi = Graph::new(&mut pi);
+    iteration(&c_info, &mut agent, &f, &mut g_b, &mut g_pi);
     Ok(())
 }
