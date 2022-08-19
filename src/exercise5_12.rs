@@ -14,6 +14,7 @@ struct Field {
     pub boundary:Vec<Vec2>,//index:y, value:(x_min, x_max)
     pub start_line:i32,//min-y-row
     pub finish_line:i32,//max-x-column
+    pub corner:i32,
 }
 
 struct ControlInfo {
@@ -55,7 +56,7 @@ struct Policy {
 
 impl Field {
     fn new() -> Self {
-        Self { boundary:Vec::new(), start_line:0, finish_line:0 }
+        Self { boundary:Vec::new(), start_line:0, finish_line:0, corner:0 }
     }
 
     fn append_row(&mut self, x_range:(i32, i32), y_range:i32) -> &mut Self {
@@ -77,6 +78,7 @@ impl Field {
             .append_row((2, 16), 2)
             .append_row((3, 16), 1);
         self.finish_line = 16;
+        self.corner = 25;
     }
 
     fn setup_v2(&mut self) {
@@ -95,6 +97,7 @@ impl Field {
             .append_row((14, 32), 1)
             .append_row((17, 32), 1);
         self.finish_line = 32;
+        self.corner = 20;
     }
 
     fn is_outside(&self, p:&Vec2) -> bool {
@@ -124,6 +127,11 @@ impl Field {
 
     fn crossed_finish_line(&self, p:&Vec2) -> bool {
         p.0 >= self.finish_line
+    }
+
+    fn sample_start(&self) -> Vec2 {
+        let row = self.boundary[self.start_line as usize];
+        ((row.0 + row.1) / 2, self.start_line)
     }
 
     fn print(&self) {
@@ -204,7 +212,7 @@ impl Episode {
                     Some(v) => *v,
                     None => {
                         let y = (s.0).1;
-                        if y > 25 { (1, 0) }
+                        if y > f.corner { (1, 0) }
                         else { (0, 1) }
                     },
                 };
@@ -343,6 +351,7 @@ fn iteration(c_info:&ControlInfo, a:&mut Agent, f:&Field, b:&mut Graph, pi:&mut 
     let mut ep = Episode::new();
     let mut ep_c = 0;
     let a_info = a.info;
+    let sample_start = f.sample_start();
     while ep_c < c_info.max_episode {
         let mut ep_cc = 0;
         while ep_cc < c_info.episode_check_interval {
@@ -351,8 +360,8 @@ fn iteration(c_info:&ControlInfo, a:&mut Agent, f:&Field, b:&mut Graph, pi:&mut 
             b.mc_control(&ep, a.info, c_info, None);
             pi.mc_control(&ep, a.info, c_info, Some(b));
         }
-        b.print_policy_sample(f, a_info, "b:", (5, 0));
-        pi.print_policy_sample(f, a_info, "pi:", (5, 0));
+        b.print_policy_sample(f, a_info, "b:", sample_start);
+        pi.print_policy_sample(f, a_info, "pi:", sample_start);
         ep_c += ep_cc;
     }
 }
