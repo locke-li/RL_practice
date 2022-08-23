@@ -21,6 +21,9 @@ struct ControlInfo {
     pub max_episode:usize,
     pub episode_check_interval:usize,
     pub epsilon:f64,
+    pub gamma:f64,
+    pub estimator:i32,
+    pub horizon:i32,
 }
 
 struct AgentInfo {
@@ -251,6 +254,16 @@ impl<'a> Graph<'a> {
     }
 
     fn mc_control(&mut self, ep:&Episode, a_info:&AgentInfo, c_info:&ControlInfo, b:Option<&Graph>) {
+        match c_info.estimator {
+            //weighted importance sampling
+            0 => self.mc_control_wis(ep, a_info, c_info, b),
+            //weighted truncated importance sampling
+            1 => self.mc_control_wtis(ep, a_info, c_info, b),
+            _ => todo!()
+        }
+    }
+
+    fn mc_control_wis(&mut self, ep:&Episode, a_info:&AgentInfo, c_info:&ControlInfo, b:Option<&Graph>) {
         for k in (0..ep.state.len()).rev() {
             let s = &ep.state[k];
             let a = &ep.action[k];
@@ -278,6 +291,10 @@ impl<'a> Graph<'a> {
                 None => {}
             }
         }
+    }
+
+    fn mc_control_wtis(&mut self, ep:&Episode, a_info:&AgentInfo, c_info:&ControlInfo, b:Option<&Graph>) {
+        
     }
 
     fn improve_policy(&mut self, s:&State) -> Option<&Action> {
@@ -376,9 +393,9 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     };
     a_info.setup();
     let c_info = ControlInfo {
-        max_episode:1000,
-        episode_check_interval:100,
-        epsilon:0.2,
+        max_episode:10000, episode_check_interval:1000,
+        epsilon:0.2, gamma:0.9,
+        estimator:0, horizon:4,
     };
     let mut agent = Agent::new(&a_info);
     let mut b = Policy::new();
