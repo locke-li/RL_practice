@@ -49,8 +49,13 @@ struct Episode {
 struct Graph<'a> {
     pub g:f64,
     pub w:f64,
-    pub q:BTreeMap<State, BTreeMap<Action, (f64, f64)>>,
+    pub q:BTreeMap<State, BTreeMap<Action, ActionValue>>,
     pub p_ref:&'a mut Policy,
+}
+
+struct ActionValue {
+    pub v:f64,//value
+    pub w:f64,//weight
 }
 
 struct Policy {
@@ -274,11 +279,11 @@ impl<'a> Graph<'a> {
                 Occupied(v) => v.into_mut(),
             };
             let q = match a_map.entry(*a) {
-                Vacant(v) => v.insert((0.0, 0.0)),
+                Vacant(v) => v.insert(ActionValue::new()),
                 Occupied(v) => v.into_mut(),
             };
-            q.1 += self.w;
-            q.0 += self.w * (self.g - q.0) / q.1;
+            q.w += self.w;
+            q.v += self.w * (self.g - q.v) / q.w;
             let a_match = match self.improve_policy(s) {
                 Some(v) => v == a,
                 None => false,
@@ -294,7 +299,7 @@ impl<'a> Graph<'a> {
     }
 
     fn mc_control_wtis(&mut self, ep:&Episode, a_info:&AgentInfo, c_info:&ControlInfo, b:Option<&Graph>) {
-        
+
     }
 
     fn improve_policy(&mut self, s:&State) -> Option<&Action> {
@@ -303,7 +308,7 @@ impl<'a> Graph<'a> {
             Some(v) => v,
             None => return None,
         };
-        let (a, _) = a_map.iter().max_by(|(_, (q0, _)), (_, (q1, _))| q0.total_cmp(q1)).unwrap();
+        let (a, _) = a_map.iter().max_by(|(_, q0), (_, q1)| q0.v.total_cmp(&q1.v)).unwrap();
         p.state_action.insert(*s, *a);
         Some(a)
     }
@@ -355,6 +360,12 @@ impl<'a> Graph<'a> {
             }
             println!();
         }
+    }
+}
+
+impl ActionValue {
+    fn new() -> Self {
+        Self { v:0.0, w:0.0 }
     }
 }
 
