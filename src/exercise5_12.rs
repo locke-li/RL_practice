@@ -143,13 +143,12 @@ impl Field {
     }
 
     fn print(&self) {
-        let y_max = self.boundary.len() - 1;
-        for (i, (x_min, x_max)) in self.boundary.iter().rev().enumerate() {
+        for (i, (x_min, x_max)) in self.boundary.iter().enumerate().rev() {
             for _ in 0..*x_min {
                 print!("       ");
             }
             for k in *x_min..=*x_max {
-                print!("|{:02},{:02}|", k, y_max - i);
+                print!("|{:02},{:02}|", k, i);
             }
             println!();
         }
@@ -349,13 +348,12 @@ impl<'a> Graph<'a> {
             visit.insert(*p);
             if f.crossed_finish_line(p) || f.is_outside(p) { break }
         }
-        let y_max = (f.boundary.len() - 1) as i32;
-        for (i, (x_min, x_max)) in f.boundary.iter().rev().enumerate() {
+        for (i, (x_min, x_max)) in f.boundary.iter().enumerate().rev() {
             for _ in 0..*x_min {
                 print!("   ");
             }
             for k in *x_min..=*x_max {
-                if visit.contains(&(k, y_max - i as i32)) { print!("|+|") }
+                if visit.contains(&(k, i as i32)) { print!("|+|") }
                 else { print!("| |"); }
             }
             println!();
