@@ -2,6 +2,7 @@ use std::cmp::{ min, max };
 use std::collections::{BTreeMap, HashSet};
 use std::collections::btree_map::Entry::{ Vacant, Occupied };
 use std::error::Error;
+use std::time::Instant;
 use rand::prelude::*;
 
 type Vec2 = (i32, i32);
@@ -380,6 +381,7 @@ fn iteration(c_info:&ControlInfo, a:&mut Agent, f:&Field, b:&mut Graph, pi:&mut 
     let mut ep_c = 0;
     let a_info = a.info;
     let sample_start = f.sample_start();
+    let now = Instant::now();
     while ep_c < c_info.max_episode {
         let mut ep_cc = 0;
         while ep_cc < c_info.episode_check_interval {
@@ -388,6 +390,8 @@ fn iteration(c_info:&ControlInfo, a:&mut Agent, f:&Field, b:&mut Graph, pi:&mut 
             b.mc_control(&ep, a.info, c_info, None);
             pi.mc_control(&ep, a.info, c_info, Some(b));
         }
+        let elapsed = now.elapsed().as_secs();
+        println!("elapsed:{}", elapsed);
         b.print_policy_sample(f, a_info, "b:", sample_start);
         pi.print_policy_sample(f, a_info, "pi:", sample_start);
         ep_c += ep_cc;
@@ -404,7 +408,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     };
     a_info.setup();
     let c_info = ControlInfo {
-        max_episode:10000, episode_check_interval:1000,
+        max_episode:1000000, episode_check_interval:50000,
         epsilon:0.2, gamma:0.9,
         estimator:0, horizon:4,
     };
