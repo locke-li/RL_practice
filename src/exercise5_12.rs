@@ -129,19 +129,22 @@ impl Field {
         p.0 < row.0 || p.0 > row.1
     }
 
-    fn reset_if_outside(&self, p:&mut Vec2, v:&mut Vec2) -> bool {
-        let row = match self.boundary.get(p.1 as usize) {
-            Some(v) => v,
-            None => {
-                self.reset_to_start(p, v);
-                return true
-            },
-        };
-        if p.0 < row.0 || p.0 > row.1 {
-            self.reset_to_start(p, v);
-            true
+    fn intersect(&self, p_s:&Vec2, p:&Vec2, v:&Vec2) -> bool {
+        if self.is_outside(p) { true }
+        else {
+            let step = max(v.0, v.1);
+            let v_x0 = p_s.0 as f32;
+            let v_y0 = p_s.1 as f32;
+            let v_x = v.0 as f32 / step as f32;
+            let v_y = v.1 as f32 / step as f32;
+            for i in 1..step {
+                let x = (v_x0 + v_x * i as f32).floor() as i32;
+                let y = (v_y0 + v_y * i as f32).floor() as i32;
+                let p = (x, y);
+                if self.is_outside(&p) { return true }
+            }
+            false
         }
-        else { false }
     }
 
     fn reset_to_start(&self, p:&mut Vec2, v:&mut Vec2, rng:&mut ThreadRng) {
@@ -237,8 +240,10 @@ impl Episode {
                 };
             }
         }
+        let p_s = a.position;
         let (p, v) = a.action(&act);
-        if f.reset_if_outside(p, v) {
+        if f.intersect(&p_s, p, v) {
+            f.reset_to_start(p, v, rng);
             //clear previous failed trajectory
             //but keeps the boundary state for feedback
             self.state.clear();
