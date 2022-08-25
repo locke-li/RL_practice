@@ -258,6 +258,8 @@ impl<'a> Graph<'a> {
     }
 
     fn mc_control(&mut self, ep:&Episode, a_info:&AgentInfo, c_info:&ControlInfo, b:Option<&Graph>) {
+        self.g = 0.0;
+        self.w = 1.0;
         match c_info.estimator {
             //weighted importance sampling
             0 => self.mc_control_wis(ep, a_info, c_info, b),
