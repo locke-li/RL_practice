@@ -354,19 +354,43 @@ impl<'a> Graph<'a> {
         visit.insert(p_start);
         let mut agent = Agent::new(info);
         agent.position = p_start;
-        loop {
-            let act = match map.get(&agent.state()) {
+        let (finish, s) = loop {
+            let s = &agent.state();
+            let act = match map.get(s) {
                 Some(v) => v,
                 None => {
-                    println!("state not found {:?}", &agent.state());
-                    break
+                    println!("state not found {:?}", s);
+                    break (false, *s)
                 }
             };
             agent.action(&act);
             let p = &agent.position;
-            if visit.contains(p) { break }
+            if visit.contains(p) {
+                println!("position visited (loop) {:?} {:?}", s, p);
+                break (false, *s)
+            }
             visit.insert(*p);
-            if f.crossed_finish_line(p) || f.is_outside(p) { break }
+            if f.is_outside(p) {
+                println!("position outside {:?} {:?}", s, p);
+                break (false, *s)
+            }
+            if f.crossed_finish_line(p) { break (true, *s) }
+        };
+        if !finish {
+            println!("sample steps {}", visit.len());
+            match self.q.get(&s) {
+                Some(v) => {
+                    for (a, q) in v {
+                        println!("{:?} {:?}", a, q.v);
+                    }
+                },
+                None => {},
+            };
+            match map.get(&s) {
+                Some(v) => { println!("{:?}", v) },
+                None => {},
+            };
+            return
         }
         for (i, (x_min, x_max)) in f.boundary.iter().enumerate().rev() {
             for _ in 0..*x_min {
