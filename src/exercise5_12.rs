@@ -109,6 +109,18 @@ impl Field {
         self.corner = 20;
     }
 
+    fn random_start(&self, rng:&mut ThreadRng) -> Vec2 {
+        let start = &self.boundary[self.start_line as usize];
+        let r = rng.gen_range(start.0..=start.1);
+        (r, self.start_line)
+    }
+
+    fn indexed_start(&self, r:usize) -> Vec2 {
+        let start = &self.boundary[self.start_line as usize];
+        let r = start.0 + r as i32 % (1 + start.1 - start.0);
+        (r, self.start_line)
+    }
+
     fn is_outside(&self, p:&Vec2) -> bool {
         let row = match self.boundary.get(p.1 as usize) {
             Some(v) => v,
@@ -132,22 +144,13 @@ impl Field {
         else { false }
     }
 
-    fn reset_to_start(&self, p:&mut Vec2, v:&mut Vec2) {
+    fn reset_to_start(&self, p:&mut Vec2, v:&mut Vec2, rng:&mut ThreadRng) {
         *v = (0, 0);
-        p.1 = self.start_line;
-        let row = &self.boundary[self.start_line as usize];
-        p.0 = if p.0 < row.0 { row.0 }
-        else if p.0 > row.1 { row.1 }
-        else { p.0 };
+        *p = self.random_start(rng);
     }
 
     fn crossed_finish_line(&self, p:&Vec2) -> bool {
         p.0 >= self.finish_line
-    }
-
-    fn sample_start(&self) -> Vec2 {
-        let row = self.boundary[self.start_line as usize];
-        ((row.0 + row.1) / 2, self.start_line)
     }
 
     fn print(&self) {
@@ -244,13 +247,11 @@ impl Episode {
         (s, act, f.crossed_finish_line(p))
     }
 
-    fn generate(&mut self, b:&mut Policy, f:&Field, a:&mut Agent, c_info:&ControlInfo) {
+    fn generate(&mut self, i:usize, b:&mut Policy, f:&Field, a:&mut Agent, c_info:&ControlInfo) {
         self.state.clear();
         self.action.clear();
-        let start = &f.boundary[f.start_line as usize];
         a.velocity = (0, 0);
-        let r = self.rng.gen_range(start.0..=start.1);
-        a.position = (r, f.start_line);
+        a.position = f.indexed_start(i);
         let mut finish = false;
         while !finish {
             let s:State;
@@ -391,18 +392,18 @@ fn iteration(c_info:&ControlInfo, a:&mut Agent, f:&Field, b:&mut Graph, pi:&mut 
     let mut ep = Episode::new();
     let mut ep_c = 0;
     let a_info = a.info;
-    let sample_start = f.sample_start();
     let now = Instant::now();
     while ep_c < c_info.max_episode {
         let mut ep_cc = 0;
         while ep_cc < c_info.episode_check_interval {
             ep_cc += 1;
-            ep.generate(b.p_ref, f, a, c_info);
+            ep.generate(ep_c + ep_cc, b.p_ref, f, a, c_info);
             b.mc_control(&ep, a.info, c_info, None);
             pi.mc_control(&ep, a.info, c_info, Some(b));
         }
         let elapsed = now.elapsed().as_secs();
         println!("elapsed:{}", elapsed);
+        let sample_start = f.random_start(&mut ep.rng);
         b.print_policy_sample(f, a_info, "b:", sample_start);
         pi.print_policy_sample(f, a_info, "pi:", sample_start);
         ep_c += ep_cc;
