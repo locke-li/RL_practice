@@ -117,12 +117,19 @@ impl Field {
         p.0 < row.0 || p.0 > row.1
     }
 
-    fn reset_if_outside(&self, p:&mut Vec2, v:&mut Vec2) {
+    fn reset_if_outside(&self, p:&mut Vec2, v:&mut Vec2) -> bool {
         let row = match self.boundary.get(p.1 as usize) {
             Some(v) => v,
-            None => return self.reset_to_start(p, v),
+            None => {
+                self.reset_to_start(p, v);
+                return true
+            },
         };
-        if p.0 < row.0 || p.0 > row.1 { self.reset_to_start(p, v) }
+        if p.0 < row.0 || p.0 > row.1 {
+            self.reset_to_start(p, v);
+            true
+        }
+        else { false }
     }
 
     fn reset_to_start(&self, p:&mut Vec2, v:&mut Vec2) {
@@ -190,7 +197,8 @@ impl Episode {
         Self { state:Vec::new(), action:Vec::new(), rng:rand::thread_rng() }
     }
 
-    fn step(b:&mut Policy, f:&Field, a:&mut Agent, c_info:&ControlInfo, rng:&mut ThreadRng) -> (State, Action, bool) {
+    fn step(&mut self, b:&mut Policy, f:&Field, a:&mut Agent, c_info:&ControlInfo) -> (State, Action, bool) {
+        let rng = &mut self.rng;
         let s = a.state();
         let info = a.info;
         let a_min = info.action.0;
@@ -227,15 +235,18 @@ impl Episode {
             }
         }
         let (p, v) = a.action(&act);
-        f.reset_if_outside(p, v);
+        if f.reset_if_outside(p, v) {
+            //clear previous failed trajectory
+            //but keeps the boundary state for feedback
+            self.state.clear();
+            self.action.clear();
+        }
         (s, act, f.crossed_finish_line(p))
     }
 
     fn generate(&mut self, b:&mut Policy, f:&Field, a:&mut Agent, c_info:&ControlInfo) {
-        let state = &mut self.state;
-        let action = &mut self.action;
-        state.clear();
-        action.clear();
+        self.state.clear();
+        self.action.clear();
         let start = &f.boundary[f.start_line as usize];
         a.velocity = (0, 0);
         let r = self.rng.gen_range(start.0..=start.1);
@@ -244,9 +255,9 @@ impl Episode {
         while !finish {
             let s:State;
             let act:Action;
-            (s, act, finish) = Episode::step(b, f, a, c_info, &mut self.rng);
-            state.push(s);
-            action.push(act);
+            (s, act, finish) = self.step(b, f, a, c_info);
+            self.state.push(s);
+            self.action.push(act);
             // println!("{:?}:{:?}->{:?}", s, act, a.state());
         }
         // println!("episode generated");
