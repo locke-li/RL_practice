@@ -8,7 +8,7 @@ use rand::prelude::*;
 type Vec2 = (i32, i32);
 type State = (Vec2, Vec2);
 type Action = Vec2;
-// type StateAction = (State, Action);
+type StateAction = (State, Action);
 // type EpisodeStep = (State, Action, i32);
 
 struct Field {
@@ -24,7 +24,7 @@ struct ControlInfo {
     pub epsilon:f64,
     pub gamma:f64,
     pub estimator:i32,
-    pub horizon:i32,
+    pub horizon:f32,//percent between t..T
 }
 
 struct AgentInfo {
@@ -57,6 +57,14 @@ struct Graph<'a> {
 struct ActionValue {
     pub v:f64,//value
     pub w:f64,//weight
+}
+
+struct ActionValueWithHorizon {
+    pub h:usize,
+    pub t:usize,
+    pub v:f64,
+    pub w:f64,
+    pub g:f64,
 }
 
 struct Policy {
@@ -318,7 +326,55 @@ impl<'a> Graph<'a> {
     }
 
     fn mc_control_wtis(&mut self, ep:&Episode, a_info:&AgentInfo, c_info:&ControlInfo, b:Option<&Graph>) {
-
+        let mut h_map:BTreeMap<StateAction, ActionValueWithHorizon> = BTreeMap::new();
+        let tt = ep.state.len();
+        let hh = c_info.horizon;
+        for (t, s) in ep.state.iter().enumerate().rev() {
+            h_map.insert((*s, ep.action[t]), ActionValueWithHorizon::new(t, ((tt - t) as f32 * hh).floor() as usize));
+        }
+        let mut gamma = c_info.gamma;
+        let neg_gamma = 1.0 - gamma;
+        for k in (0..tt).rev() {
+            let s = &ep.state[k];
+            let a = &ep.action[k];
+            let act_v = h_map.get_mut(&(*s, *a)).unwrap();
+            let r = k as f64 * a_info.step_reward;
+            self.g += r;
+            let a_match = if k <= act_v.h {
+                act_v.g += r;
+                let mut w = neg_gamma * gamma * act_v.w;
+                let mut v = w * act_v.g;
+                if k == act_v.t {
+                    w += gamma * self.w;
+                    v += w * self.g;
+                }
+                let a_map = match self.q.entry(*s) {
+                    Vacant(v) => v.insert(BTreeMap::new()),
+                    Occupied(v) => v.into_mut(),
+                };
+                let q = match a_map.entry(*a) {
+                    Vacant(v) => v.insert(ActionValue::new()),
+                    Occupied(v) => v.into_mut(),
+                };
+                q.w += w;
+                q.v += w * (v - q.v) / q.w;
+                match self.improve_policy(s) {
+                    Some(v) => v == a,
+                    None => false,
+                }
+            }
+            else { true };
+            match b {
+                Some(v) => {
+                    if !a_match { return }
+                    let w = 1.0 / v.p_epsilon(s, a, c_info);
+                    self.w *= w;
+                    if k <= act_v.h { act_v.w *= w };
+                },
+                None => {}
+            }
+            gamma *= gamma;
+        }
     }
 
     fn improve_policy(&mut self, s:&State) -> Option<&Action> {
@@ -411,6 +467,12 @@ impl ActionValue {
     }
 }
 
+impl ActionValueWithHorizon {
+    fn new(t:usize, h:usize) -> Self {
+        Self {t, h, v:0.0, w:1.0, g:0.0 }
+    }
+}
+
 impl Policy {
     fn new() -> Self {
         Self { state_action:BTreeMap::new() }
@@ -427,7 +489,7 @@ fn iteration(c_info:&ControlInfo, a:&mut Agent, f:&Field, b:&mut Graph, pi:&mut 
         while ep_cc < c_info.episode_check_interval {
             ep_cc += 1;
             ep.generate(ep_c + ep_cc, b.p_ref, f, a, c_info);
-            b.mc_control(&ep, a.info, c_info, None);
+            b.mc_control_wis(&ep, a.info, c_info, None);
             pi.mc_control(&ep, a.info, c_info, Some(b));
         }
         let elapsed = now.elapsed().as_secs();
@@ -451,7 +513,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     let c_info = ControlInfo {
         max_episode:100000000, episode_check_interval:100000,
         epsilon:0.55, gamma:0.9,
-        estimator:0, horizon:4,
+        estimator:1, horizon:0.5,
     };
     let mut agent = Agent::new(&a_info);
     let mut b = Policy::new();
