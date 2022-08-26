@@ -511,7 +511,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     a_info.setup();
     let c_info = ControlInfo {
         max_episode:100000000, episode_check_interval:100000,
-        epsilon:0.55, gamma:0.9,
+        epsilon:0.55, gamma:0.2,
         estimator:1, horizon:4,
     };
     let mut agent = Agent::new(&a_info);
