@@ -121,16 +121,18 @@ impl Field {
         (r, self.start_line)
     }
 
-    fn is_outside(&self, p:&Vec2) -> bool {
+    fn is_outside(&self, p:&Vec2) -> (bool, bool) {
         let row = match self.boundary.get(p.1 as usize) {
             Some(v) => v,
-            None => return true,
+            None => return (true, false),
         };
-        p.0 < row.0 || p.0 > row.1
+        if p.0 > self.finish_line { (true, true) }
+        else { (p.0 < row.0 || p.0 > row.1, false) }
     }
 
-    fn intersect(&self, p_s:&Vec2, p:&Vec2, v:&Vec2) -> bool {
-        if self.is_outside(p) { true }
+    fn intersect(&self, p_s:&Vec2, p:&Vec2, v:&Vec2) -> (bool, bool) {
+        let result = self.is_outside(p);
+        if result.0 { result }
         else {
             let step = max(v.0, v.1);
             let v_x0 = p_s.0 as f32;
@@ -141,19 +143,16 @@ impl Field {
                 let x = (v_x0 + v_x * i as f32).floor() as i32;
                 let y = (v_y0 + v_y * i as f32).floor() as i32;
                 let p = (x, y);
-                if self.is_outside(&p) { return true }
+                let result = self.is_outside(&p);
+                if result.0 { return result }
             }
-            false
+            (false, false)
         }
     }
 
     fn reset_to_start(&self, p:&mut Vec2, v:&mut Vec2, rng:&mut ThreadRng) {
         *v = (0, 0);
         *p = self.random_start(rng);
-    }
-
-    fn crossed_finish_line(&self, p:&Vec2) -> bool {
-        p.0 >= self.finish_line
     }
 
     fn print(&self) {
@@ -242,14 +241,15 @@ impl Episode {
         }
         let p_s = a.position;
         let (p, v) = a.action(&act);
-        if f.intersect(&p_s, p, v) {
+        let (outside, finish) = f.intersect(&p_s, p, v);
+        if outside && !finish {
             f.reset_to_start(p, v, rng);
             //clear previous failed trajectory
             //but keeps the boundary state for feedback
             self.state.clear();
             self.action.clear();
         }
-        (s, act, f.crossed_finish_line(p))
+        (s, act, finish)
     }
 
     fn generate(&mut self, i:usize, b:&mut Policy, f:&Field, a:&mut Agent, c_info:&ControlInfo) {
@@ -420,11 +420,12 @@ impl<'a> Graph<'a> {
                 break (false, *s)
             }
             visit.insert(*p);
-            if f.is_outside(p) {
+            let (outside, finish) = f.is_outside(p);
+            if finish { break (true, *s) }
+            if outside {
                 println!("position outside {:?} {:?}", s, p);
                 break (false, *s)
             }
-            if f.crossed_finish_line(p) { break (true, *s) }
         };
         if !finish {
             println!("sample steps {}", visit.len());
@@ -442,13 +443,21 @@ impl<'a> Graph<'a> {
             };
             return
         }
+        let empty = "   ";
         for (i, (x_min, x_max)) in f.boundary.iter().enumerate().rev() {
             for _ in 0..*x_min {
-                print!("   ");
+                print!("{}", empty);
             }
-            for k in *x_min..=*x_max {
+            let x_max = *x_max;
+            for k in *x_min..=x_max {
                 if visit.contains(&(k, i as i32)) { print!("|+|") }
                 else { print!("| |"); }
+            }
+            if x_max == f.finish_line {
+                for k in x_max+1..x_max+4 {
+                    if visit.contains(&(k, i as i32)) { print!(" + ") }
+                    else { print!("{}", empty); }
+                }
             }
             println!();
         }
