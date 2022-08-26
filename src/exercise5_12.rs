@@ -320,6 +320,7 @@ impl<'a> Graph<'a> {
     fn mc_control_wtis(&mut self, ep:&Episode, a_info:&AgentInfo, c_info:&ControlInfo, b:Option<&Graph>) {
         let mut p_vec:Vec<f64> = Vec::new();
         for (t, s) in ep.state.iter().enumerate() {
+            //TODO: only valid for when Some(b)
             p_vec.push(1.0 / self.p_epsilon(s, &ep.action[t], c_info));
         }
         let tt = ep.state.len();
@@ -354,6 +355,7 @@ impl<'a> Graph<'a> {
                 w_h *= p_vec[j];
                 gamma_h *= gamma_v;
             }
+            //TODO NaN value appears, check needed
             q.w += w;
             q.v += w * (g - q.v) / q.w;
             let a_match = match self.improve_policy(s) {
