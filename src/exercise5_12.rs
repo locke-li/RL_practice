@@ -23,8 +23,9 @@ struct ControlInfo {
     pub episode_check_interval:usize,
     pub epsilon:f64,
     pub gamma:f64,
-    pub estimator:i32,
     pub horizon:usize,
+    pub estimator:i32,
+    pub field:i32,
 }
 
 struct AgentInfo {
@@ -501,19 +502,23 @@ fn iteration(c_info:&ControlInfo, a:&mut Agent, f:&Field, b:&mut Graph, pi:&mut 
 }
 
 pub fn run() -> Result<(), Box<dyn Error>> {
+    let c_info = ControlInfo {
+        max_episode:100000000, episode_check_interval:100000,
+        epsilon:0.55, gamma:0.2, horizon:4,
+        estimator:1, field:1,
+    };
     let mut f = Field::new();
-    f.setup_v1();
+    match c_info.field {
+        1 => f.setup_v1(),
+        2 => f.setup_v2(),
+        _ => { return Err(format!("invalid field setup {}", c_info.field).into()) }
+    }
     f.print();
     let mut a_info = AgentInfo {
         velocity_max:5, action:(-1, 1), step_reward:-1.0,
         p_vel_inc0:0.1, a_space:(0, 0.0),
     };
     a_info.setup();
-    let c_info = ControlInfo {
-        max_episode:100000000, episode_check_interval:100000,
-        epsilon:0.55, gamma:0.2,
-        estimator:1, horizon:4,
-    };
     let mut agent = Agent::new(&a_info);
     let mut b = Policy::new();
     let mut pi = Policy::new();
