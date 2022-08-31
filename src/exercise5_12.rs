@@ -20,7 +20,7 @@ struct Field {
 
 struct ControlInfo {
     pub max_episode:usize,
-    pub episode_check_interval:usize,
+    pub episode_check:usize,
     pub epsilon:f64,
     pub gamma:f64,
     pub horizon:usize,
@@ -484,9 +484,10 @@ fn iteration(c_info:&ControlInfo, a:&mut Agent, f:&Field, b:&mut Graph, pi:&mut 
     let mut ep_c = 0;
     let a_info = a.info;
     let now = Instant::now();
+    let interval = c_info.max_episode / c_info.episode_check;
     while ep_c < c_info.max_episode {
         let mut ep_cc = 0;
-        while ep_cc < c_info.episode_check_interval {
+        while ep_cc < interval {
             ep_cc += 1;
             ep.generate(ep_c + ep_cc, b.p_ref, f, a, c_info);
             b.mc_control_wis(&ep, a.info, c_info, None);
@@ -503,7 +504,7 @@ fn iteration(c_info:&ControlInfo, a:&mut Agent, f:&Field, b:&mut Graph, pi:&mut 
 
 pub fn run() -> Result<(), Box<dyn Error>> {
     let c_info = ControlInfo {
-        max_episode:100000000, episode_check_interval:100000,
+        max_episode:100000000, episode_check:20,
         epsilon:0.55, gamma:0.2, horizon:4,
         estimator:1, field:1,
     };
