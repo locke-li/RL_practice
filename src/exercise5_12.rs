@@ -219,7 +219,7 @@ impl Episode {
         }
         else {
             let r:f64 = rng.gen();
-            if r > c_info.epsilon {
+            if r < c_info.epsilon {
                 //equiprobable explore
                 let mut aa = (rng.gen::<f32>() * act_s) as i32;
                 let skip = v0 - a_min + (v1 - a_min) * act_r;
